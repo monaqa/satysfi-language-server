@@ -1,0 +1,585 @@
+# fixed completion items
+
+[[statement]]
+label = "let-inline"
+detail = "inline-cmd definition"
+insert_text = 'let-inline ${1:ctx} \\${2:cmd-name} ${3:args} = $0'
+insert_text_format = "snippet"
+documentation = '''
+Declare new inline-cmd.
+
+```
+let-inline \pangram = {The quick fox jumps over the lazy dog.}
+let-inline ctx \textbf = {The quick fox jumps over the lazy dog.}
+```
+'''
+
+[[statement]]
+label = "let-block"
+detail = "block-cmd definition"
+insert_text = 'let-block ${1:ctx} +${2:cmd-name} ${3:args} = $0'
+insert_text_format = "snippet"
+documentation = '''
+Declare new block-cmd.
+'''
+
+[[statement]]
+label = "let-math"
+detail = "math-cmd definition"
+insert_text = 'let-math \\${1:cmd-name} ${2:args} = $0'
+insert_text_format = "snippet"
+documentation = '''
+Declare new math-cmd.
+'''
+
+[[statement]]
+label = 'direct inline-cmd'
+detail = "inline-cmd declaration (direct)"
+insert_text = 'direct \\${1:cmd-name} : [$0] inline-cmd'
+insert_text_format = "snippet"
+
+[[statement]]
+label = 'direct block-cmd'
+detail = "block-cmd declaration (direct)"
+insert_text = 'direct +${1:cmd-name} : [$0] block-cmd'
+insert_text_format = "snippet"
+
+[[statement]]
+label = 'direct math-cmd'
+detail = "math-cmd declaration (direct)"
+insert_text = 'direct \\${1:cmd-name} : [$0] math-cmd'
+insert_text_format = "snippet"
+
+[[primitive]]
+label = "inline-fil"
+detail = "inline-boxes"
+documentation = '''
+Infinitely extending glue. Often appended to the end of a paragraph.
+
+```
+let bb = line-break true true ctx (ib ++ inline-fil)
+```
+'''
+
+
+[[primitive]]
+label = "abort-with-message"
+detail = "string -> unit"
+documentation = '''
+Abort with message.
+'''
+
+[[primitive]]
+label = "acos"
+
+[[primitive]]
+label = "add-footnote"
+
+[[primitive]]
+label = "arabic"
+detail = "int -> string"
+documentation = '''
+Convert integer to string with Arabic notation.
+'''
+
+[[primitive]]
+label = "asin"
+
+[[primitive]]
+label = "atan"
+
+[[primitive]]
+label = "atan2"
+
+[[primitive]]
+label = "bezier-to"
+
+[[primitive]]
+label = "block-frame-breakable"
+
+[[primitive]]
+label = "block-skip"
+
+[[primitive]]
+label = "break"
+
+[[primitive]]
+label = "close-with-bezier"
+
+[[primitive]]
+label = "close-with-line"
+
+[[primitive]]
+label = "convert-string-for-math"
+
+[[primitive]]
+label = "cos"
+
+[[primitive]]
+label = "dashed-stroke"
+
+[[primitive]]
+label = "deepen-indent"
+
+[[primitive]]
+label = "discretionary"
+
+[[primitive]]
+label = "display-message"
+detail = "string -> unit"
+documentation = '''
+Display a message to console.
+'''
+
+[[primitive]]
+label = "draw-text"
+detail = "(length * length) -> inline-boxes -> graphics"
+insert_text = "draw-text ${1:(x, y)} ${2:ib}"
+insert_text_format = "snippet"
+documentation = '''
+Draw a text (inline-boxes) at the specified point.
+'''
+
+[[primitive]]
+label = "embed-block-bottom"
+
+[[primitive]]
+label = "embed-block-breakable"
+
+[[primitive]]
+label = "embed-block-top"
+detail = "context -> length -> (context -> block-boxes) -> inline-boxes"
+insert_text = "embed-block-top ${1:ctx} ${2:wid} ${3:(fun ctx -> read-block ctx bt)}"
+insert_text_format = "snippet"
+
+[[primitive]]
+label = "embed-math"
+detail = "context -> math -> inline-boxes"
+insert_text = "embed-math ${1:ctx} ${2:m}"
+insert_text_format = "snippet"
+documentation = '''
+Convert math to inline-boxes based on the given context.
+'''
+
+[[primitive]]
+label = "embed-string"
+
+[[primitive]]
+label = "exp"
+
+[[primitive]]
+label = "extract-string"
+
+[[primitive]]
+label = "fill"
+detail = "color -> path -> graphics"
+insert_text = "fill ${1:Color.black} ${2:path}"
+insert_text_format = "snippet"
+documentation = '''
+Fill the path with the specified color.
+'''
+
+[[primitive]]
+label = "float"
+
+[[primitive]]
+label = "get-axis-height"
+
+[[primitive]]
+label = "get-cross-reference"
+
+[[primitive]]
+label = "get-dominant-narrow-script"
+
+[[primitive]]
+label = "get-dominant-wide-script"
+
+[[primitive]]
+label = "get-every-word-break"
+
+[[primitive]]
+label = "get-font"
+
+[[primitive]]
+label = "get-font-size"
+
+[[primitive]]
+label = "get-initial-context"
+
+[[primitive]]
+label = "get-initial-text-info"
+
+[[primitive]]
+label = "get-input-position"
+
+[[primitive]]
+label = "get-language"
+
+[[primitive]]
+label = "get-left-math-class"
+
+[[primitive]]
+label = "get-leftmost-script"
+
+[[primitive]]
+label = "get-natural-length"
+
+[[primitive]]
+label = "get-natural-metrics"
+
+[[primitive]]
+label = "get-path-bbox"
+
+[[primitive]]
+label = "get-right-math-class"
+
+[[primitive]]
+label = "get-rightmost-script"
+
+[[primitive]]
+label = "get-space-ratio-between-scripts"
+
+[[primitive]]
+label = "get-text-color"
+
+[[primitive]]
+label = "get-text-width"
+
+[[primitive]]
+label = "hook-page-break"
+
+[[primitive]]
+label = "inline-frame-breakable"
+
+[[primitive]]
+label = "inline-frame-fixed"
+
+[[primitive]]
+label = "inline-frame-inner"
+
+[[primitive]]
+label = "inline-frame-outer"
+
+[[primitive]]
+label = "inline-glue"
+
+[[primitive]]
+label = "inline-graphics"
+
+[[primitive]]
+label = "inline-graphics-outer"
+
+[[primitive]]
+label = "inline-skip"
+
+[[primitive]]
+label = "lift-float"
+
+[[primitive]]
+label = "lift-int"
+
+[[primitive]]
+label = "lift-length"
+
+[[primitive]]
+label = "lift-string"
+
+[[primitive]]
+label = "line-break"
+detail = "bool -> bool -> context -> inline-boxes -> block-boxes"
+insert_text = "line-break ${1:true} ${2:true} ${3:ctx} ${4:ib}"
+insert_text_format = "snippet"
+documentation = '''
+Perform row splitting for the given inline-boxes.
+
+```
+let ib = read-inline ctx {The quick fox jumps...}
+let bb = line-break true true ctx (ib ++ inline-fil)
+```
+'''
+
+[[primitive]]
+label = "line-stack-bottom"
+
+[[primitive]]
+label = "line-stack-top"
+
+[[primitive]]
+label = "line-to"
+
+[[primitive]]
+label = "linear-transform-graphics"
+
+[[primitive]]
+label = "linear-transform-path"
+
+[[primitive]]
+label = "load-image"
+
+[[primitive]]
+label = "load-pdf-image"
+
+[[primitive]]
+label = "log"
+
+[[primitive]]
+label = "math-big-char"
+
+[[primitive]]
+label = "math-big-char-with-kern"
+
+[[primitive]]
+label = "math-char"
+
+[[primitive]]
+label = "math-char-class"
+
+[[primitive]]
+label = "math-char-with-kern"
+
+[[primitive]]
+label = "math-color"
+
+[[primitive]]
+label = "math-concat"
+
+[[primitive]]
+label = "math-frac"
+
+[[primitive]]
+label = "math-group"
+
+[[primitive]]
+label = "math-lower"
+
+[[primitive]]
+label = "math-paren"
+
+[[primitive]]
+label = "math-paren-with-middle"
+
+[[primitive]]
+label = "math-pull-in-scripts"
+
+[[primitive]]
+label = "math-radical"
+
+[[primitive]]
+label = "math-sub"
+
+[[primitive]]
+label = "math-sup"
+
+[[primitive]]
+label = "math-upper"
+
+[[primitive]]
+label = "math-variant-char"
+
+[[primitive]]
+label = "mod"
+
+[[primitive]]
+label = "not"
+
+[[primitive]]
+label = "page-break"
+
+[[primitive]]
+label = "page-break-two-column"
+
+[[primitive]]
+label = "probe-cross-reference"
+
+[[primitive]]
+label = "raise-inline"
+
+[[primitive]]
+label = "read-block"
+
+[[primitive]]
+label = "read-inline"
+detail = "context -> inline-text -> inline-boxes"
+insert_text = "read-inline ${1:ctx} ${2:it}"
+insert_text_format = "snippet"
+documentation = '''
+Convert inline-text into inline-boxes based on the given context.
+
+```
+let ib = read-inline ctx {The quick fox jumps...}
+```
+'''
+
+[[primitive]]
+label = "regexp-of-string"
+
+[[primitive]]
+label = "register-cross-reference"
+
+[[primitive]]
+label = "register-destination"
+
+[[primitive]]
+label = "register-link-to-location"
+
+[[primitive]]
+label = "register-link-to-uri"
+
+[[primitive]]
+label = "register-outline"
+
+[[primitive]]
+label = "round"
+
+[[primitive]]
+label = "script-guard"
+
+[[primitive]]
+label = "script-guard-both"
+
+[[primitive]]
+label = "set-adjacent-stretch-ratio"
+
+[[primitive]]
+label = "set-code-text-command"
+
+[[primitive]]
+label = "set-dominant-narrow-script"
+
+[[primitive]]
+label = "set-dominant-wide-script"
+
+[[primitive]]
+label = "set-every-word-break"
+
+[[primitive]]
+label = "set-font"
+
+[[primitive]]
+label = "set-font-size"
+
+[[primitive]]
+label = "set-hyphen-min"
+
+[[primitive]]
+label = "set-hyphen-penalty"
+
+[[primitive]]
+label = "set-language"
+
+[[primitive]]
+label = "set-leading"
+
+[[primitive]]
+label = "set-manual-rising"
+
+[[primitive]]
+label = "set-math-command"
+
+[[primitive]]
+label = "set-math-font"
+
+[[primitive]]
+label = "set-math-variant-char"
+
+[[primitive]]
+label = "set-min-gap-of-lines"
+
+[[primitive]]
+label = "set-min-paragraph-ascender-and-descender"
+
+[[primitive]]
+label = "set-paragraph-margin"
+
+[[primitive]]
+label = "set-space-ratio"
+
+[[primitive]]
+label = "set-space-ratio-between-scripts"
+
+[[primitive]]
+label = "set-text-color"
+
+[[primitive]]
+label = "set-word-break-penalty"
+
+[[primitive]]
+label = "shift-graphics"
+
+[[primitive]]
+label = "shift-path"
+
+[[primitive]]
+label = "show-float"
+
+[[primitive]]
+label = "sin"
+
+[[primitive]]
+label = "space-between-maths"
+
+[[primitive]]
+label = "split-into-lines"
+
+[[primitive]]
+label = "split-on-regexp"
+
+[[primitive]]
+label = "start-path"
+
+[[primitive]]
+label = "string-byte-length"
+
+[[primitive]]
+label = "string-explode"
+
+[[primitive]]
+label = "string-length"
+
+[[primitive]]
+label = "string-match"
+
+[[primitive]]
+label = "string-same"
+
+[[primitive]]
+label = "string-scan"
+
+[[primitive]]
+label = "string-sub"
+
+[[primitive]]
+label = "string-sub-bytes"
+
+[[primitive]]
+label = "string-unexplode"
+
+[[primitive]]
+label = "stringify-block"
+
+[[primitive]]
+label = "stringify-inline"
+
+[[primitive]]
+label = "stroke"
+
+[[primitive]]
+label = "tabular"
+
+[[primitive]]
+label = "tan"
+
+[[primitive]]
+label = "terminate-path"
+
+[[primitive]]
+label = "text-in-math"
+
+[[primitive]]
+label = "unite-path"
+
+[[primitive]]
+label = "use-image-by-width"
+
+[[primitive]]
+label = "get-graphics-bbox"

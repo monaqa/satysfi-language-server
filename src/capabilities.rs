@@ -1,4 +1,4 @@
-use lspower::lsp::{ClientCapabilities, ServerCapabilities};
+use lspower::lsp::{ClientCapabilities, CompletionOptions, ServerCapabilities};
 
 /// Client の capabilities に合わせて Server 側の capabilities を返す。
 /// 現在は Client 側の capabilities を一切見ずに固定の値を返す。
@@ -7,7 +7,10 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
         text_document_sync: None,
         selection_range_provider: None,
         hover_provider: None,
-        completion_provider: None,
+        completion_provider: Some(CompletionOptions {
+            trigger_characters: Some(vec!["\\".to_owned(), "+".to_owned(), "#".to_owned()]),
+            ..Default::default()
+        }),
         signature_help_provider: None,
         definition_provider: None,
         type_definition_provider: None,

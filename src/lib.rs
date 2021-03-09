@@ -7,13 +7,13 @@
 use anyhow::Result;
 use lspower::{LspService, Server};
 
-mod config;
 mod language_server;
+mod parser;
 
 mod capabilities;
-
+mod completion;
+mod config;
 mod diagnostics;
-
 mod documents;
 
 pub async fn start_language_server() -> Result<()> {

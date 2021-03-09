@@ -1,13 +1,19 @@
 use log::info;
 use lspower::{
     jsonrpc::Result as LspResult,
-    lsp::{Diagnostic, InitializeParams, InitializeResult, ServerInfo},
+    lsp::{
+        CompletionList, CompletionParams, CompletionResponse, InitializeParams, InitializeResult,
+        ServerInfo,
+    },
 };
 use std::sync::Arc;
 
 use lspower::Client;
 
-use crate::{config::Config, diagnostics::DiagnosticCollection, documents::DocumentCache};
+use crate::{
+    completion::get_primitive_list, config::Config, diagnostics::DiagnosticCollection,
+    documents::DocumentCache,
+};
 
 use crate::capabilities;
 
@@ -24,6 +30,15 @@ impl LanguageServer {
 impl lspower::LanguageServer for LanguageServer {
     async fn initialize(&self, params: InitializeParams) -> LspResult<InitializeResult> {
         self.0.lock().await.initialize(params).await
+    }
+
+    async fn completion(&self, _params: CompletionParams) -> LspResult<Option<CompletionResponse>> {
+        let items = get_primitive_list();
+        let resp = CompletionResponse::List(CompletionList {
+            is_incomplete: true,
+            items,
+        });
+        Ok(Some(resp))
     }
 
     async fn shutdown(&self) -> LspResult<()> {
