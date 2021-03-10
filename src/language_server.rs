@@ -2,8 +2,8 @@ use log::info;
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
-        CompletionList, CompletionParams, CompletionResponse, InitializeParams, InitializeResult,
-        ServerInfo,
+        CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
+        InitializeParams, InitializeResult, ServerInfo,
     },
 };
 use std::sync::Arc;
@@ -32,13 +32,12 @@ impl lspower::LanguageServer for LanguageServer {
         self.0.lock().await.initialize(params).await
     }
 
-    async fn completion(&self, _params: CompletionParams) -> LspResult<Option<CompletionResponse>> {
-        let items = get_primitive_list();
-        let resp = CompletionResponse::List(CompletionList {
-            is_incomplete: true,
-            items,
-        });
-        Ok(Some(resp))
+    async fn completion(&self, params: CompletionParams) -> LspResult<Option<CompletionResponse>> {
+        self.0.lock().await.get_completion(params).await
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        self.0.lock().await.did_change(params).await;
     }
 
     async fn shutdown(&self) -> LspResult<()> {
@@ -87,5 +86,26 @@ impl Inner {
             capabilities,
             server_info: Some(server_info),
         })
+    }
+
+    async fn get_completion(
+        &self,
+        _params: CompletionParams,
+    ) -> LspResult<Option<CompletionResponse>> {
+        let items = get_primitive_list();
+        let resp = CompletionResponse::List(CompletionList {
+            is_incomplete: true,
+            items,
+        });
+        Ok(Some(resp))
+    }
+
+    async fn did_change(&mut self, params: DidChangeTextDocumentParams) {
+        let uri = params.text_document.uri;
+        let changes = params.content_changes;
+        self.documents.update(&uri, &changes);
+        let diags = self.documents.publish_diagnostics(&uri);
+
+        self.client.publish_diagnostics(uri, diags, None).await;
     }
 }

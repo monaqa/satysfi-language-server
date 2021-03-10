@@ -1,10 +1,15 @@
-use lspower::lsp::{ClientCapabilities, CompletionOptions, ServerCapabilities};
+use lspower::lsp::{
+    ClientCapabilities, CompletionOptions, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind,
+};
 
 /// Client の capabilities に合わせて Server 側の capabilities を返す。
 /// 現在は Client 側の capabilities を一切見ずに固定の値を返す。
 pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerCapabilities {
     ServerCapabilities {
-        text_document_sync: None,
+        // text document sync は一旦 full で行う
+        // TODO: TextDocumentSyncKind::Incremental のほうがおそらくパフォーマンスが高い
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full)),
         selection_range_provider: None,
         hover_provider: None,
         completion_provider: Some(CompletionOptions {
