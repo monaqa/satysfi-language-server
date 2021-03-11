@@ -29,8 +29,8 @@ pkgname = { (!("\r" | "\n") ~ ANY)+ }
 
 // ヘッダの書きかけ。
 dummy_header = @{
-    "@require:"
-    | "@import:"
+    "@require:"~ (" " | "\t")*
+    | "@import:"~ (" " | "\t")*
     | "@" ~ var_ptn
     | "@"
 }
@@ -524,7 +524,6 @@ math_unary = ${
     | "\\" ~ math_special_char
     | math_symbol
     | math_cmd
-    | dummy_math_cmd_incomplete
 }
 math_cmd = {
     math_cmd_name
@@ -561,10 +560,5 @@ math_cmd_record_arg = {
     | "!(" ~ "|" ~ record_inner ~ "|" ~ ")"
 }
 math_cmd_expr_option = { "?:" ~ math_cmd_expr_arg }
-
-// math_cmd の入力中。
-dummy_math_cmd_incomplete = @{
-    "\\" ~ (var_ptn | modvar)?
-}
 
 // }}}

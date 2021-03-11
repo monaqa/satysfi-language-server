@@ -2,9 +2,9 @@ use log::info;
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
-        CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams, Hover,
-        HoverContents, HoverParams, InitializeParams, InitializeResult, LanguageString,
-        MarkedString, MarkupContent, ServerInfo,
+        CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
+        DidOpenTextDocumentParams, Hover, HoverContents, HoverParams, InitializeParams,
+        InitializeResult, LanguageString, MarkedString, MarkupContent, ServerInfo,
     },
 };
 use std::sync::Arc;
@@ -39,6 +39,10 @@ impl lspower::LanguageServer for LanguageServer {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         self.0.lock().await.did_change(params).await;
+    }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        self.0.lock().await.did_open(params).await;
     }
 
     async fn hover(&self, params: HoverParams) -> LspResult<Option<Hover>> {
@@ -109,7 +113,16 @@ impl Inner {
         let uri = params.text_document.uri;
         let changes = params.content_changes;
         self.documents.update(&uri, &changes);
-        let diags = self.documents.publish_diagnostics(&uri);
+        let diags = self.documents.get_diagnostics(&uri);
+
+        self.client.publish_diagnostics(uri, diags, None).await;
+    }
+
+    async fn did_open(&mut self, params: DidOpenTextDocumentParams) {
+        let uri = params.text_document.uri;
+        let text = params.text_document.text;
+        self.documents.insert(&uri, &text);
+        let diags = self.documents.get_diagnostics(&uri);
 
         self.client.publish_diagnostics(uri, diags, None).await;
     }

@@ -145,9 +145,20 @@ impl Cst {
         }
         Mode::Program
     }
+
+    /// 自身及び子要素の Cst を羅列する。
+    pub fn listup(&self) -> Vec<&Cst> {
+        let mut v = vec![];
+        v.push(self);
+        for cst in &self.inner {
+            let inner = cst.listup();
+            v.extend(inner);
+        }
+        v
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CstRange {
     /// 始まりの位置。
     start: CstPosition,
@@ -180,7 +191,7 @@ impl CstRange {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CstPosition {
     /// スタートから何バイト目にあるか。
     byte: usize,
@@ -229,4 +240,29 @@ pub enum Mode {
     Literal,
     /// コメント。
     Comment,
+}
+
+pub trait SyntaxErrorRule {
+    fn error_description(&self) -> Option<String>;
+    fn is_error(&self) -> bool {
+        self.error_description().is_some()
+    }
+}
+
+impl SyntaxErrorRule for Rule {
+    fn error_description(&self) -> Option<String> {
+        match self {
+            Rule::dummy_header => Some("Missing package name."),
+            Rule::dummy_stmt => Some("Missing variable name."),
+            Rule::dummy_sig_stmt => Some("Incomplete signature syntax."),
+            Rule::dummy_inline_cmd_incomplete => Some(
+                "Incomplete command. Try adding semicolon or arguments after the command name.",
+            ),
+            Rule::dummy_block_cmd_incomplete => Some(
+                "Incomplete command. Try adding semicolon or arguments after the command name.",
+            ),
+            _ => None,
+        }
+        .map(str::to_owned)
+    }
 }
