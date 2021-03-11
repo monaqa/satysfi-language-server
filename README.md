@@ -13,7 +13,7 @@ This repository is work-in-progress yet.
 |`completion`     |Complete a primitive                                       |✅  |
 |`completion`     |Complete a public function in a module                     |    |
 |`diagnostics`    |Linter (warning)                                           |    |
-|`diagnostics`    |Syntax error (Recoverable)                                 |    |
+|`diagnostics`    |Syntax error (Recoverable)                                 |✅  |
 |`diagnostics`    |Syntax error (Unrecoverable)                               |✅  |
 |`diagnostics`    |Type error                                                 |    |
 |`format`         |Code formatting                                            |    |
