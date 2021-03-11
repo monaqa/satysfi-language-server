@@ -71,9 +71,14 @@ Abort with message.
 
 [[primitive]]
 label = "acos"
+detail = "float -> float"
+documentation = '''
+Inverse cosine function.
+'''
 
 [[primitive]]
 label = "add-footnote"
+detail = "block-boxes -> inline-boxes"
 
 [[primitive]]
 label = "arabic"
@@ -84,36 +89,59 @@ Convert integer to string with Arabic notation.
 
 [[primitive]]
 label = "asin"
+detail = "float -> float"
+documentation = '''
+Inverse sine function.
+'''
 
 [[primitive]]
 label = "atan"
+detail = "float -> float"
+documentation = '''
+Inverse tangent function.
+'''
 
 [[primitive]]
 label = "atan2"
+detail = "float -> float -> float"
+documentation = '''
+`atan2 y x` returns the inverse tangent of `(y /. x)`,
+where the signs of `x` and `y` is used to determine the quadrant.
+The return value is between -π and π.
+'''
 
 [[primitive]]
 label = "bezier-to"
+detail = "point -> point -> point -> pre-path -> pre-path"
 
 [[primitive]]
 label = "block-frame-breakable"
+detail = "context -> paddings -> (deco * deco * deco * deco) -> (context -> block-boxes) -> block-boxes"
 
 [[primitive]]
 label = "block-skip"
+detail = "length -> block-boxes"
 
 [[primitive]]
 label = "break"
 
 [[primitive]]
 label = "close-with-bezier"
+detail = "point -> point-> pre-path -> path"
 
 [[primitive]]
 label = "close-with-line"
+detail = "pre-path -> path"
 
 [[primitive]]
 label = "convert-string-for-math"
 
 [[primitive]]
 label = "cos"
+detail = "float -> float"
+documentation = '''
+Cosine function.
+'''
 
 [[primitive]]
 label = "dashed-stroke"
