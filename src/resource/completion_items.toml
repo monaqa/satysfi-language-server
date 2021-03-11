@@ -292,7 +292,7 @@ insert_text_format = "snippet"
 documentation = '''
 Perform row splitting for the given inline-boxes.
 
-```
+```satysfi
 let ib = read-inline ctx {The quick fox jumps...}
 let bb = line-break true true ctx (ib ++ inline-fil)
 ```
@@ -405,7 +405,7 @@ insert_text_format = "snippet"
 documentation = '''
 Convert inline-text into inline-boxes based on the given context.
 
-```
+```satysfi
 let ib = read-inline ctx {The quick fox jumps...}
 ```
 '''

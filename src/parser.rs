@@ -24,11 +24,11 @@ pub type Pair<'i> = pest::iterators::Pair<'i, Rule>;
 #[derive(Debug, Clone)]
 pub struct Cst {
     /// そのルールが何であるか。
-    rule: Rule,
+    pub rule: Rule,
     /// Cst が表す範囲。
-    range: CstRange,
+    pub range: CstRange,
     /// 子 Cst。
-    inner: Vec<Cst>,
+    pub inner: Vec<Cst>,
 }
 
 impl<'a> From<Pair<'a>> for Cst {

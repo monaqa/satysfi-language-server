@@ -2,8 +2,9 @@ use log::info;
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
-        CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-        InitializeParams, InitializeResult, ServerInfo,
+        CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams, Hover,
+        HoverContents, HoverParams, InitializeParams, InitializeResult, LanguageString,
+        MarkedString, MarkupContent, ServerInfo,
     },
 };
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use lspower::Client;
 
 use crate::{
     completion::get_primitive_list, config::Config, diagnostics::DiagnosticCollection,
-    documents::DocumentCache,
+    documents::DocumentCache, parser::Rule,
 };
 
 use crate::capabilities;
@@ -38,6 +39,10 @@ impl lspower::LanguageServer for LanguageServer {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         self.0.lock().await.did_change(params).await;
+    }
+
+    async fn hover(&self, params: HoverParams) -> LspResult<Option<Hover>> {
+        self.0.lock().await.hover(params).await
     }
 
     async fn shutdown(&self) -> LspResult<()> {
@@ -107,5 +112,51 @@ impl Inner {
         let diags = self.documents.publish_diagnostics(&uri);
 
         self.client.publish_diagnostics(uri, diags, None).await;
+    }
+
+    async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        if let Some(doc_data) = self.documents.get(&uri) {
+            if let Ok(cst) = &doc_data.parsed_result {
+                // 与えられた pos が含むような Rule::var を探す
+                let cst_var = cst.dig(&pos).into_iter().find(|&cst| cst.rule == Rule::var);
+                if let Some(cst_var) = cst_var {
+                    let var_name = cst_var.as_str(&doc_data.text);
+                    let cst_range = cst_var.range.clone().into();
+                    // 与えられた var_name の primitive を探す
+                    let items = crate::completion::get_resouce_items();
+                    let primitive = items
+                        .get("primitive")
+                        .and_then(|v| v.iter().find(|&item| item.label == var_name));
+                    if let Some(primitive) = primitive {
+                        let hover = Hover {
+                            contents: HoverContents::Array(vec![
+                                MarkedString::LanguageString(LanguageString {
+                                    language: "satysfi".to_owned(),
+                                    value: primitive
+                                        .detail
+                                        .as_deref()
+                                        .unwrap_or("primitive")
+                                        .to_owned(),
+                                }),
+                                MarkedString::String(
+                                    primitive
+                                        .documentation
+                                        .as_deref()
+                                        .unwrap_or("undocumented")
+                                        .to_string(),
+                                ),
+                            ]),
+                            range: Some(cst_range),
+                        };
+                        return Ok(Some(hover));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 }

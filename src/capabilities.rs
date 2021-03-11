@@ -1,6 +1,6 @@
 use lspower::lsp::{
-    ClientCapabilities, CompletionOptions, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind,
+    ClientCapabilities, CompletionOptions, HoverProviderCapability, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 /// Client の capabilities に合わせて Server 側の capabilities を返す。
@@ -11,7 +11,7 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
         // TODO: TextDocumentSyncKind::Incremental のほうがおそらくパフォーマンスが高い
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full)),
         selection_range_provider: None,
-        hover_provider: None,
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec!["\\".to_owned(), "+".to_owned(), "#".to_owned()]),
             ..Default::default()

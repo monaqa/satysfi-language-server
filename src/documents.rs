@@ -76,12 +76,16 @@ impl DocumentCache {
         }
         vec![]
     }
+
+    pub fn get(&self, uri: &Url) -> Option<&DocumentData> {
+        self.docs.get(uri)
+    }
 }
 
 #[derive(Debug)]
 pub struct DocumentData {
-    text: String,
-    parsed_result: std::result::Result<Cst, pest::error::Error<Rule>>,
+    pub text: String,
+    pub parsed_result: std::result::Result<Cst, pest::error::Error<Rule>>,
 }
 
 impl DocumentData {
