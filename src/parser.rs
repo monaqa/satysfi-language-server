@@ -11,7 +11,7 @@ mod tests;
 
 // pub mod relation;
 
-use std::ops::RangeBounds;
+use std::{fmt::Display, ops::RangeBounds};
 
 use itertools::Itertools;
 use lspower::lsp::{Position, Range, Url};
@@ -39,6 +39,30 @@ pub struct SourceRange {
     pub url: Url,
     /// 具象構文木
     pub range: CstRange,
+}
+
+impl Display for SourceRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let CstPosition {
+            line: sl,
+            character: sc,
+            ..
+        } = self.range.start;
+        let CstPosition {
+            line: el,
+            character: ec,
+            ..
+        } = self.range.end;
+        write!(
+            f,
+            "{}:{}:{} -- {}:{}",
+            self.url,
+            sl + 1,
+            sc + 1,
+            el + 1,
+            ec + 1
+        )
+    }
 }
 
 // #[derive(Debug, Clone)]

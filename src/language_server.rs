@@ -133,8 +133,13 @@ impl Inner {
     async fn did_open(&mut self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
+
+        // 開いたドキュメントの情報を追加
         self.documents.insert(&uri, &text);
         let diags = self.documents.get_diagnostics(&uri);
+
+        // 依存先の情報を追加
+        // self.documents.get(&uri).
 
         self.client.publish_diagnostics(uri, diags, None).await;
     }

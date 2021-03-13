@@ -2,7 +2,7 @@ use itertools::Itertools;
 use log::{debug, info, warn};
 use lspower::lsp::{Diagnostic, Position, Range, TextDocumentContentChangeEvent, Url};
 use pest::error::ErrorVariant;
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::parser::{Cst, Rule, SyntaxErrorRule};
 
@@ -19,7 +19,27 @@ pub struct DocumentCache {
 impl DocumentCache {
     pub fn insert(&mut self, uri: &Url, text: &str) {
         let document_data = DocumentData::new(text);
-        self.environments.update(&uri, &document_data);
+        self.environments.update(uri, &document_data);
+
+        let deps = document_data.get_dependencies(uri);
+        for dep in deps {
+            let fpath = match dep.url.to_file_path() {
+                Ok(f) => f,
+                Err(_) => {
+                    continue;
+                }
+            };
+            let text = match std::fs::read_to_string(fpath) {
+                Ok(t) => t,
+                Err(_) => {
+                    continue;
+                }
+            };
+            let dep_data = DocumentData::new(&text);
+            self.environments.update(&dep.url, &dep_data);
+            self.docs.insert(dep.url.clone(), dep_data);
+        }
+
         self.docs.insert(uri.clone(), document_data);
     }
 
@@ -30,6 +50,26 @@ impl DocumentCache {
             let text = &change.text;
             let document_data = DocumentData::new(text);
             self.environments.update(&uri, &document_data);
+
+            let deps = document_data.get_dependencies(uri);
+            for dep in deps {
+                let fpath = match dep.url.to_file_path() {
+                    Ok(f) => f,
+                    Err(_) => {
+                        continue;
+                    }
+                };
+                let text = match std::fs::read_to_string(fpath) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        continue;
+                    }
+                };
+                let dep_data = DocumentData::new(&text);
+                self.environments.update(&dep.url, &dep_data);
+                self.docs.insert(dep.url.clone(), dep_data);
+            }
+
             self.docs.insert(uri.clone(), document_data);
         }
     }
@@ -112,14 +152,9 @@ impl DocumentCache {
 
     // for debug
     pub fn show_environments(&self) {
-        debug!(
-            "{:?}",
-            self.environments
-                .variable
-                .iter()
-                .map(|v| &v.name)
-                .collect_vec()
-        )
+        for var in &self.environments.variable {
+            debug!("name: {}, definition: {}", var.name, var.definition);
+        }
     }
 }
 
@@ -138,4 +173,73 @@ impl DocumentData {
             parsed_result,
         }
     }
+
+    pub fn get_dependencies(&self, url: &Url) -> Vec<Dependency> {
+        let mut deps = vec![];
+        let program = match &self.parsed_result {
+            Ok(p) => p,
+            Err(_) => return vec![],
+        };
+        let home_path = std::env::var("HOME").map(PathBuf::from).ok();
+        let file_path = url.to_file_path().ok();
+
+        let require_pkgnames = program
+            .pickup(Rule::header_require)
+            .into_iter()
+            .map(|require| require.inner.get(0).unwrap().as_str(&self.text));
+        let import_pkgnames = program
+            .pickup(Rule::header_import)
+            .into_iter()
+            .map(|import| import.inner.get(0).unwrap().as_str(&self.text));
+
+        // require 系のパッケージの依存関係追加
+        if let Some(home_path) = home_path {
+            let dist_path = home_path.join(".satysfi/dist/packages");
+
+            for pkgname in require_pkgnames {
+                // TODO: *.satyg file
+                let pkg_path = dist_path.join(format!("{}.satyh", pkgname));
+                if pkg_path.exists() {
+                    if let Ok(url) = Url::from_file_path(pkg_path) {
+                        deps.push(Dependency {
+                            kind: DependencyKind::Require,
+                            url,
+                        });
+                    }
+                }
+            }
+        }
+
+        if let Some(file_path) = file_path {
+            // unwrap して大丈夫？
+            let parent_path = file_path.parent().unwrap();
+
+            for pkgname in import_pkgnames {
+                // TODO: *.satyg file
+                let pkg_path = parent_path.join(format!("{}.satyh", pkgname));
+                if pkg_path.exists() {
+                    if let Ok(url) = Url::from_file_path(pkg_path) {
+                        deps.push(Dependency {
+                            kind: DependencyKind::Import,
+                            url,
+                        });
+                    }
+                }
+            }
+        }
+
+        deps
+    }
+}
+
+#[derive(Debug)]
+pub struct Dependency {
+    kind: DependencyKind,
+    url: Url,
+}
+
+#[derive(Debug)]
+pub enum DependencyKind {
+    Require,
+    Import,
 }
