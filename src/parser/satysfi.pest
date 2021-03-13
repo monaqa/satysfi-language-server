@@ -485,7 +485,7 @@ vertical_element = {
     | block_text_embedding
     | dummy_block_cmd_incomplete
 }
-block_cmd_name = @{ "+" ~ (var_ptn | modvar) }
+block_cmd_name = ${ "+" ~ (var_ptn | modvar) }
 block_cmd = {
     block_cmd_name
     // TODO: cmd_expr_option が必ず前に来るようにする

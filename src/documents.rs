@@ -1,19 +1,25 @@
 use itertools::Itertools;
-use log::{info, warn};
+use log::{debug, info, warn};
 use lspower::lsp::{Diagnostic, Position, Range, TextDocumentContentChangeEvent, Url};
 use pest::error::ErrorVariant;
 use std::collections::HashMap;
 
 use crate::parser::{Cst, Rule, SyntaxErrorRule};
 
+use self::environments::Environments;
+
+pub mod environments;
+
 #[derive(Debug, Default)]
 pub struct DocumentCache {
-    docs: HashMap<Url, DocumentData>,
+    pub docs: HashMap<Url, DocumentData>,
+    pub environments: Environments,
 }
 
 impl DocumentCache {
     pub fn insert(&mut self, uri: &Url, text: &str) {
         let document_data = DocumentData::new(text);
+        self.environments.update(&uri, &document_data);
         self.docs.insert(uri.clone(), document_data);
     }
 
@@ -23,6 +29,7 @@ impl DocumentCache {
         if let Some(change) = changes.get(0) {
             let text = &change.text;
             let document_data = DocumentData::new(text);
+            self.environments.update(&uri, &document_data);
             self.docs.insert(uri.clone(), document_data);
         }
     }
@@ -102,6 +109,18 @@ impl DocumentCache {
     pub fn get(&self, uri: &Url) -> Option<&DocumentData> {
         self.docs.get(uri)
     }
+
+    // for debug
+    pub fn show_environments(&self) {
+        debug!(
+            "{:?}",
+            self.environments
+                .variable
+                .iter()
+                .map(|v| &v.name)
+                .collect_vec()
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -112,10 +131,8 @@ pub struct DocumentData {
 
 impl DocumentData {
     pub fn new(text: &str) -> Self {
-        info!("text: {}", text);
         let parsed_result = Cst::parse(text, Rule::program);
         let text = text.to_owned();
-        warn!("parsed: {:?}", parsed_result);
         Self {
             text,
             parsed_result,

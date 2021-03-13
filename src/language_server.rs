@@ -1,13 +1,14 @@
-use log::info;
+use log::{debug, info};
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
         CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, Hover, HoverContents, HoverParams, InitializeParams,
-        InitializeResult, LanguageString, MarkedString, MarkupContent, ServerInfo,
+        DidOpenTextDocumentParams, DidSaveTextDocumentParams, GotoDefinitionParams,
+        GotoDefinitionResponse, Hover, HoverContents, HoverParams, InitializeParams,
+        InitializeResult, LanguageString, Location, MarkedString, MarkupContent, ServerInfo,
     },
 };
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use lspower::Client;
 
@@ -47,6 +48,17 @@ impl lspower::LanguageServer for LanguageServer {
 
     async fn hover(&self, params: HoverParams) -> LspResult<Option<Hover>> {
         self.0.lock().await.hover(params).await
+    }
+
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        self.0.lock().await.did_save(params).await;
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> LspResult<Option<GotoDefinitionResponse>> {
+        self.0.lock().await.goto_definition(params).await
     }
 
     async fn shutdown(&self) -> LspResult<()> {
@@ -125,6 +137,87 @@ impl Inner {
         let diags = self.documents.get_diagnostics(&uri);
 
         self.client.publish_diagnostics(uri, diags, None).await;
+    }
+
+    async fn did_save(&mut self, params: DidSaveTextDocumentParams) {
+        self.documents.show_environments();
+    }
+
+    async fn goto_definition(
+        &mut self,
+        params: GotoDefinitionParams,
+    ) -> LspResult<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        debug!("pos: {:?}", pos);
+        debug!("Doing goto definition");
+
+        if let Some(cst) = self
+            .documents
+            .get(&uri)
+            .and_then(|data| data.parsed_result.as_ref().ok())
+        {
+            let envs = &self.documents.environments;
+            let text = &self.documents.get(&uri).unwrap().text;
+            let available_rules: HashSet<_> = [
+                Rule::var,
+                Rule::inline_cmd_name,
+                Rule::block_cmd_name,
+                Rule::math_cmd_name,
+            ]
+            .iter()
+            .collect();
+            let cst_var = cst.dig(&pos).into_iter().find(|&cst| {
+                debug!("{:?}: {:?}", cst.rule, cst.range);
+                available_rules.contains(&cst.rule)
+            });
+            let source_range = if let Some(cst_var) = cst_var {
+                info!("cst_var: {:?}", cst_var.as_str(text));
+                match cst_var.rule {
+                    Rule::var => {
+                        let variable = envs.variable.iter().find(|v| {
+                            v.kind == crate::documents::environments::VariableKind::Variable
+                                && v.name == cst_var.as_str(text)
+                        });
+                        variable.map(|variable| &variable.definition)
+                    }
+                    Rule::inline_cmd_name => {
+                        let cmd = envs.variable.iter().find(|v| {
+                            v.kind == crate::documents::environments::VariableKind::InlineCmd
+                                && v.name == cst_var.as_str(text)
+                        });
+                        cmd.map(|cmd| &cmd.definition)
+                    }
+                    Rule::block_cmd_name => {
+                        let cmd = envs.variable.iter().find(|v| {
+                            debug!("v: {:?}", v);
+                            v.kind == crate::documents::environments::VariableKind::BlockCmd
+                                && v.name == cst_var.as_str(text)
+                        });
+                        info!("matched command: {:?}", cmd);
+                        cmd.map(|cmd| &cmd.definition)
+                    }
+                    Rule::math_cmd_name => {
+                        let cmd = envs.variable.iter().find(|v| {
+                            v.kind == crate::documents::environments::VariableKind::MathCmd
+                                && v.name == cst_var.as_str(text)
+                        });
+                        cmd.map(|cmd| &cmd.definition)
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                None
+            };
+            let resp = source_range.map(|source_range| {
+                GotoDefinitionResponse::Scalar(Location {
+                    uri: source_range.url.clone(),
+                    range: source_range.range.into(),
+                })
+            });
+            return Ok(resp);
+        }
+        Ok(None)
     }
 
     async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {

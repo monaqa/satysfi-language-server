@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use log::LevelFilter;
+use log::{error, LevelFilter};
 use satysfi_language_server::start_language_server;
 
 use simplelog::{ConfigBuilder, WriteLogger};
@@ -33,10 +33,19 @@ async fn main() -> Result<()> {
         WriteLogger::init(
             LevelFilter::Debug,
             log_conf,
-            std::fs::File::create(opts.output_log).unwrap(),
+            // std::fs::File::create(opts.output_log).unwrap(),
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(opts.output_log)
+                .unwrap(),
         )
         .unwrap();
     }
 
-    start_language_server().await
+    if let Err(e) = start_language_server().await {
+        error!("Fatal error: {:?}", e);
+    }
+
+    Ok(())
 }

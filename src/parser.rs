@@ -11,15 +11,17 @@ mod tests;
 
 // pub mod relation;
 
+use std::ops::RangeBounds;
+
 use itertools::Itertools;
-use lspower::lsp::{Position, Range};
+use lspower::lsp::{Position, Range, Url};
 use pest::{Parser, Span};
 pub use satysfi_parser::{Rule, SatysfiParser};
 
 /// CalculatorParser で用いられる Pair.
 pub type Pair<'i> = pest::iterators::Pair<'i, Rule>;
 
-/// 参照をなくして BufferCst が自己参照構造体になることを回避した
+/// 具象構文木。参照をなくして BufferCst が自己参照構造体になることを回避した
 /// pest::iterators::Pair 的なもの。再帰構造を持つ。
 #[derive(Debug, Clone)]
 pub struct Cst {
@@ -30,6 +32,17 @@ pub struct Cst {
     /// 子 Cst。
     pub inner: Vec<Cst>,
 }
+
+#[derive(Debug, Clone)]
+pub struct SourceRange {
+    /// ソースの URL
+    pub url: Url,
+    /// 具象構文木
+    pub range: CstRange,
+}
+
+// #[derive(Debug, Clone)]
+// pub struct
 
 impl<'a> From<Pair<'a>> for Cst {
     fn from(pair: Pair<'a>) -> Self {
@@ -188,6 +201,16 @@ impl CstRange {
         let start: Position = self.start.clone().into();
         let end: Position = self.end.clone().into();
         pos >= &start && pos <= &end
+    }
+}
+
+impl RangeBounds<CstPosition> for CstRange {
+    fn start_bound(&self) -> std::ops::Bound<&CstPosition> {
+        std::ops::Bound::Included(&self.start)
+    }
+
+    fn end_bound(&self) -> std::ops::Bound<&CstPosition> {
+        std::ops::Bound::Included(&self.end)
     }
 }
 

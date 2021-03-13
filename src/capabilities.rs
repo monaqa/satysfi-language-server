@@ -1,5 +1,5 @@
 use lspower::lsp::{
-    ClientCapabilities, CompletionOptions, HoverProviderCapability, ServerCapabilities,
+    ClientCapabilities, CompletionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
     TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
@@ -17,7 +17,7 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
             ..Default::default()
         }),
         signature_help_provider: None,
-        definition_provider: None,
+        definition_provider: Some(OneOf::Left(true)),
         type_definition_provider: None,
         implementation_provider: None,
         references_provider: None,
