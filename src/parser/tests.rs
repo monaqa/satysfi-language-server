@@ -20,7 +20,7 @@ struct ParsedAst {
 }
 
 impl ParsedAst {
-    fn check_parsed(&self) -> std::result::Result<(), AstParseError> {
+    fn check_parsed(&self) -> std::result::Result<Pair, AstParseError> {
         let text = &self.text;
         let rule = self.rule;
 
@@ -29,9 +29,9 @@ impl ParsedAst {
             .next()
             .unwrap();
 
-        self.check_equality(pair, AstBranchSequence(vec![(0, rule)]))?;
+        self.check_equality(pair.clone(), AstBranchSequence(vec![(0, rule)]))?;
 
-        Ok(())
+        Ok(pair)
     }
 
     fn check_equality(
@@ -219,16 +219,22 @@ macro_rules! ast_inner {
 }
 
 macro_rules! assert_parsed {
-    ($s:literal $r:ident : $t:tt) => {
-        let ast = ast!($s $r: $t);
+    ($s:literal $($rest:ident),+ : $t:tt) => {
+        let ast = ast!($s $($rest),+: $t );
         if let Err(e) = ast.check_parsed() {
-            panic!("assertion failed: {}", e)
+            panic!("assertion failed (parse failed): {}", e)
         }
     };
-    ($s:literal $r:ident, $($rest:ident),+ : $t:tt) => {
-        let ast = ast!($s $r, $($rest),+: $t );
-        if let Err(e) = ast.check_parsed() {
-            panic!("assertion failed: {}", e)
+}
+
+macro_rules! assert_not_parsed {
+    ($s:literal $($rest:ident),+ : $t:tt) => {
+        let ast = ast!($s $($rest),+: $t );
+        if let Ok(pair) = ast.check_parsed() {
+            panic!(
+                "assertion failed (successfully parsed): \"{}\" as {:?}. pair: {:?}",
+                ast.text, ast.rule, pair
+            )
         }
     };
 }
@@ -242,4 +248,51 @@ fn test_assert_parsed() {
         "List" module_name: [];
         "map" var_ptn : [];
     ]);
+}
+
+mod statement {
+    use super::*;
+
+    #[test]
+    fn let_stmt() {
+        assert_parsed!("let hoge = 1" let_stmt: [
+            "hoge" pattern, var: [];
+            "1" expr, unary, literal: [_];
+        ]);
+    }
+}
+
+mod expr {
+    use super::*;
+
+    #[test]
+    fn match_expr() {
+        assert_parsed!("match hoge with | Some(hoge) -> 1 | None -> 0" match_expr : [
+            "hoge" expr: [_];
+            "Some(hoge) -> 1" match_arm: [_];
+            "None -> 0" match_arm: [_];
+        ]);
+    }
+
+    #[test]
+    fn match_arm() {
+        assert_parsed!("Some(hoge) -> 1" match_arm: [
+            "Some(hoge)" match_ptn: [
+                "Some(hoge)" pat_variant: [
+                    "Some" variant_name: [];
+                    "(hoge)" pattern : [_];
+                ];
+            ];
+            "1" expr: [_];
+        ]);
+    }
+
+    #[test]
+    fn dyadic_expr() {
+        assert_not_parsed!("None -> 0" dyadic_expr: [_]);
+        assert_not_parsed!("None ->0" dyadic_expr: [_]);
+        assert_not_parsed!("None ->0" dyadic_expr: [_]);
+        assert_not_parsed!("None -> 0" dyadic_expr: [_]);
+        assert_parsed!("None ->| 0" dyadic_expr: [_]);
+    }
 }

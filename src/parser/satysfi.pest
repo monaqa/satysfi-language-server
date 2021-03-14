@@ -145,9 +145,11 @@ dummy_sig_stmt = { !"end" ~ var_ptn}
 // types {{{
 
 type_expr = {
-    (type_optional_name ~ "?->")* ~ (type_prod ~ "->")* ~ type_prod
+    ((type_optional_name ~ "?->") | (type_prod ~ "->"))* ~ type_prod
 }
-type_optional_name = _{type_prod}
+type_optional_name = {
+    type_unary ~ ("*" ~ type_unary)*
+}
 type_prod = {
     type_unary ~ ("*" ~ type_unary)*
 }
@@ -226,9 +228,9 @@ expr = {
     | assignment
     | dyadic_expr
     | unary_operator_expr
-    | variant_constructor
     | application
     | record_member
+    | variant_constructor
     | unary
 }
 
@@ -285,7 +287,7 @@ unary = {  // 1つの項として扱えるもの．
 unary_operator_expr = {
     unary_operator ~ (application | record_member | unary)
 }
-unary_operator = { "-" | "not" }
+unary_operator = { "-" | "not" | "!" | "&" | "~" }
 
 variant_constructor = {
     variant_name ~ unary?
@@ -318,7 +320,7 @@ var = @{
 var_ptn = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHANUMERIC | "-")* }
 module_name = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "-")* }
 variant_name = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "-")* }
-modvar = @{ module_name ~ "." ~ var_ptn }
+modvar = ${ module_name ~ "." ~ var_ptn }
 expr_with_mod = { expr_with_mod_begin ~ expr ~ "" }
     expr_with_mod_begin = @{ module_name ~ ".(" }
 
@@ -370,13 +372,21 @@ horizontal_text = { "{" ~ horizontal_mode ~ "}" }
 math_text = !{"${" ~ math_mode ~ "}"}
 
 dyadic_expr = {
-    (unary_operator_expr | variant_constructor | application | unary)
+    dyadic_expr_inner
     ~ bin_operator
-    ~ (dyadic_expr | unary_operator_expr | variant_constructor | application | unary)
+    ~ (dyadic_expr | dyadic_expr_inner)
+}
+dyadic_expr_inner = {
+    unary_operator_expr
+    | application
+    | record_member
+    | variant_constructor
+    | unary
 }
 
 bin_operator = @{
-    bin_operator_start ~ bin_operator_succ*
+    !(reserved_operator ~ !bin_operator_succ)
+    ~ bin_operator_start ~ bin_operator_succ*
     | "::"  // cons
     | "mod"
 }
@@ -386,8 +396,19 @@ bin_operator = @{
         | "!" | ":" | "~" | "'" | "." | "?"
     }
 
-bind_stmt = _{ let_in_stmt }
-let_in_stmt = { let_stmt ~ "in" }
+// bin_operator のパターンを満たすものの、本来字句解析で特別扱いされるオペレータ
+reserved_operator = { "|" | "->" | "<-" }
+
+
+bind_stmt = {
+    (
+     let_stmt
+     | let_rec_stmt
+     | let_math_stmt
+     | let_mutable_stmt
+    )
+    ~ "in"
+}
 
 // }}}
 
