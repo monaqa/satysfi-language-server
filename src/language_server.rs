@@ -157,8 +157,6 @@ impl Inner {
     ) -> LspResult<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        debug!("pos: {:?}", pos);
-        debug!("Doing goto definition");
 
         if let Some(DocumentData::ParseSuccessful(csttext)) = self.documents.get(&uri) {
             let cst = &csttext.cst;
@@ -172,13 +170,12 @@ impl Inner {
             .iter()
             .collect();
             let pos = csttext.pos_from(&pos);
-            let cst_var = cst.dig(pos).into_iter().find(|&cst| {
-                // debug!("{:?}: {:?}", cst.rule, cst.span);
-                available_rules.contains(&cst.rule)
-            });
-            let source_range = if let Some(cst_var) = cst_var {
+            let cst_var = cst
+                .dig(pos)
+                .into_iter()
+                .find(|&cst| available_rules.contains(&cst.rule));
+            let sourcespan = if let Some(cst_var) = cst_var {
                 let var_name = csttext.get_text(cst_var);
-                info!("cst_var: {:?}", var_name);
                 match cst_var.rule {
                     Rule::var => {
                         let variable = envs.variable.iter().find(|v| {
@@ -196,7 +193,7 @@ impl Inner {
                     }
                     Rule::block_cmd_name => {
                         let cmd = envs.variable.iter().find(|v| {
-                            debug!("v: {:?}", v);
+                            info!("v: {:?}", v);
                             v.kind == crate::documents::environments::VariableKind::BlockCmd
                                 && v.name == var_name
                         });
@@ -215,13 +212,16 @@ impl Inner {
             } else {
                 None
             };
-            let resp = source_range.map(|source_range| {
-                GotoDefinitionResponse::Scalar(Location {
-                    uri: source_range.url.clone(),
-                    range: csttext.span_into(source_range.span),
-                })
-            });
-            return Ok(resp);
+            if let Some(sourcespan) = sourcespan {
+                let doc_data = self.documents.get(&sourcespan.url);
+                if let Some(DocumentData::ParseSuccessful(source_csttext)) = doc_data {
+                    let resp = GotoDefinitionResponse::Scalar(Location {
+                        uri: sourcespan.url.clone(),
+                        range: source_csttext.span_into(sourcespan.span),
+                    });
+                    return Ok(Some(resp));
+                }
+            }
         }
         Ok(None)
     }

@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use lspower::lsp::{Diagnostic, Position, Range, TextDocumentContentChangeEvent, Url};
 use satysfi_parser::{CstText, LineCol, Rule, Span};
 use std::{collections::HashMap, path::PathBuf};
@@ -24,19 +24,34 @@ pub trait ConvertPos {
 
 impl ConvertPos for CstText {
     fn pos_into(&self, pos: usize) -> Position {
-        todo!()
+        let lc = self.get_line_col(pos).unwrap_or_else(|| {
+            error!("Converting position (parser -> LSP) failed. pos:{}", pos);
+            panic!()
+        });
+        Position {
+            line: lc.line as u32,
+            character: lc.column as u32,
+        }
     }
 
     fn pos_from(&self, pos: &Position) -> usize {
-        todo!()
+        self.from_line_col(pos.line as usize, pos.character as usize)
+            .unwrap_or_else(|| {
+                error!("Converting position (LSP -> parser) failed. pos: {:?}", pos);
+                panic!()
+            })
     }
 
     fn span_into(&self, span: Span) -> Range {
-        todo!()
+        let start = self.pos_into(span.start);
+        let end = self.pos_into(span.end);
+        Range { start, end }
     }
 
     fn span_from(&self, range: Range) -> Span {
-        todo!()
+        let start = self.pos_from(&range.start);
+        let end = self.pos_from(&range.end);
+        Span { start, end }
     }
 }
 
@@ -116,7 +131,10 @@ impl DocumentCache {
                         .map(|err_cst| Diagnostic {
                             range: csttext.span_into(err_cst.span),
                             severity: Some(lspower::lsp::DiagnosticSeverity::Error),
-                            message: err_cst.rule.error_description().unwrap(),
+                            message: err_cst
+                                .rule
+                                .error_description()
+                                .unwrap_or_else(|| "No message".to_owned()),
                             ..Default::default()
                         })
                         .collect_vec();
