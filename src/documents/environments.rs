@@ -2,10 +2,10 @@ use itertools::Itertools;
 use log::debug;
 use lspower::lsp::Url;
 
-use crate::parser::SourceRange;
+use crate::documents::ConvertPos;
 
-use super::DocumentData;
-use crate::parser::Rule;
+use super::{DocumentData, SourceSpan};
+use satysfi_parser::{Rule, Span};
 
 #[derive(Debug, Default)]
 pub struct Environments {
@@ -28,9 +28,9 @@ pub struct EnvVariable {
     /// そのコマンドが定義されているモジュールの名前（あれば）
     pub mod_name: Option<String>,
     /// definition が記載されている場所の Cst（テキストは Url を参照する必要がある）
-    pub definition: SourceRange,
+    pub definition: SourceSpan,
     /// declaration が記載されている場所の Cst（テキストは Url を参照する必要がある）
-    pub declaration: Option<SourceRange>,
+    pub declaration: Option<SourceSpan>,
     // /// そのコマンドが有効な場所。補完候補を出すときや変数の shadowing があるときに重要
     // scope: Vec<SourceRange>,
 }
@@ -74,9 +74,11 @@ impl Environments {
     }
 
     fn register_inline_cmd(&mut self, url: &Url, data: &DocumentData) {
-        if let Ok(cst) = &data.parsed_result {
-            let stmts = cst.pickup(Rule::let_inline_stmt);
-            for stmt in stmts {
+        if let DocumentData::ParseSuccessful(csttext) = &data {
+            let cst = &csttext.cst;
+            let stmts_ctx = cst.pickup(Rule::let_inline_stmt_ctx);
+            let stmts_noctx = cst.pickup(Rule::let_inline_stmt_noctx);
+            for stmt in stmts_ctx.into_iter().chain(stmts_noctx) {
                 let inner = stmt.inner.get(0);
                 let cmd = match inner.map(|cst| cst.rule) {
                     Some(Rule::let_inline_stmt_ctx) => {
@@ -87,11 +89,11 @@ impl Environments {
                             .expect("expected Rule::inline_cmd_name, got nothing");
                         EnvVariable {
                             kind: VariableKind::InlineCmd,
-                            name: cmd_name.as_str(&data.text).to_owned(),
+                            name: csttext.get_text(cmd_name).to_owned(),
                             mod_name: None,
-                            definition: SourceRange {
+                            definition: SourceSpan {
                                 url: url.clone(),
-                                range: stmt.range,
+                                span: stmt.span,
                             },
                             declaration: None,
                         }
@@ -104,11 +106,11 @@ impl Environments {
                             .expect("expected Rule::inline_cmd_name, got nothing");
                         EnvVariable {
                             kind: VariableKind::InlineCmd,
-                            name: cmd_name.as_str(&data.text).to_owned(),
+                            name: csttext.get_text(cmd_name).to_owned(),
                             mod_name: None,
-                            definition: SourceRange {
+                            definition: SourceSpan {
                                 url: url.clone(),
-                                range: stmt.range,
+                                span: stmt.span,
                             },
                             declaration: None,
                         }
@@ -121,9 +123,11 @@ impl Environments {
     }
 
     fn register_block_cmd(&mut self, url: &Url, data: &DocumentData) {
-        if let Ok(cst) = &data.parsed_result {
-            let stmts = cst.pickup(Rule::let_block_stmt);
-            for stmt in stmts {
+        if let DocumentData::ParseSuccessful(csttext) = &data {
+            let cst = &csttext.cst;
+            let stmts_ctx = cst.pickup(Rule::let_block_stmt_ctx);
+            let stmts_noctx = cst.pickup(Rule::let_block_stmt_noctx);
+            for stmt in stmts_ctx.into_iter().chain(stmts_noctx) {
                 let inner = stmt.inner.get(0);
                 let cmd = match inner.map(|cst| cst.rule) {
                     Some(Rule::let_block_stmt_ctx) => {
@@ -134,11 +138,11 @@ impl Environments {
                             .expect("expected Rule::block_cmd_name, got nothing");
                         EnvVariable {
                             kind: VariableKind::BlockCmd,
-                            name: cmd_name.as_str(&data.text).to_owned(),
+                            name: csttext.get_text(cmd_name).to_owned(),
                             mod_name: None,
-                            definition: SourceRange {
+                            definition: SourceSpan {
                                 url: url.clone(),
-                                range: stmt.range,
+                                span: stmt.span,
                             },
                             declaration: None,
                         }
@@ -151,11 +155,11 @@ impl Environments {
                             .expect("expected Rule::block_cmd_name, got nothing");
                         EnvVariable {
                             kind: VariableKind::BlockCmd,
-                            name: cmd_name.as_str(&data.text).to_owned(),
+                            name: csttext.get_text(cmd_name).to_owned(),
                             mod_name: None,
-                            definition: SourceRange {
+                            definition: SourceSpan {
                                 url: url.clone(),
-                                range: stmt.range,
+                                span: stmt.span,
                             },
                             declaration: None,
                         }
@@ -168,7 +172,8 @@ impl Environments {
     }
 
     fn register_math_cmd(&mut self, url: &Url, data: &DocumentData) {
-        if let Ok(cst) = &data.parsed_result {
+        if let DocumentData::ParseSuccessful(csttext) = &data {
+            let cst = &csttext.cst;
             let stmts = cst.pickup(Rule::let_math_stmt);
             for stmt in stmts {
                 let inner = stmt.inner.get(0);
@@ -181,11 +186,11 @@ impl Environments {
                             .expect("expected Rule::math_cmd_name, got nothing");
                         EnvVariable {
                             kind: VariableKind::MathCmd,
-                            name: cmd_name.as_str(&data.text).to_owned(),
+                            name: csttext.get_text(cmd_name).to_owned(),
                             mod_name: None,
-                            definition: SourceRange {
+                            definition: SourceSpan {
                                 url: url.clone(),
-                                range: stmt.range,
+                                span: stmt.span,
                             },
                             declaration: None,
                         }
@@ -198,7 +203,8 @@ impl Environments {
     }
 
     fn register_variable(&mut self, url: &Url, data: &DocumentData) {
-        if let Ok(cst) = &data.parsed_result {
+        if let DocumentData::ParseSuccessful(csttext) = &data {
+            let cst = &csttext.cst;
             let stmts = cst.pickup(Rule::let_stmt);
             for stmt in stmts {
                 let cst_pattern = stmt
@@ -212,11 +218,11 @@ impl Environments {
                         .expect("expected Rule::math_cmd_name, got nothing");
                     let cmd = EnvVariable {
                         kind: VariableKind::Variable,
-                        name: cmd_name.as_str(&data.text).to_owned(),
+                        name: csttext.get_text(cmd_name).to_owned(),
                         mod_name: None,
-                        definition: SourceRange {
+                        definition: SourceSpan {
                             url: url.clone(),
-                            range: stmt.range,
+                            span: stmt.span,
                         },
                         declaration: None,
                     };

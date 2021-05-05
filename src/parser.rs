@@ -1,6 +1,6 @@
 /// SATySFi の PEG パーサ本体。
 #[allow(missing_docs)]
-mod satysfi_parser {
+mod satysfi_parser_pest {
     #[derive(Parser)]
     #[grammar = "parser/satysfi.pest"]
     pub struct SatysfiParser;
@@ -16,7 +16,7 @@ use std::{fmt::Display, ops::RangeBounds};
 use itertools::Itertools;
 use lspower::lsp::{Position, Range, Url};
 use pest::{Parser, Span};
-pub use satysfi_parser::{Rule, SatysfiParser};
+pub use satysfi_parser_pest::{Rule, SatysfiParser};
 
 /// CalculatorParser で用いられる Pair.
 pub type Pair<'i> = pest::iterators::Pair<'i, Rule>;

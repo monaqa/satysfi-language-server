@@ -7,11 +7,7 @@
 use anyhow::Result;
 use lspower::{LspService, Server};
 
-#[macro_use]
-extern crate pest_derive;
-
 mod language_server;
-mod parser;
 
 mod capabilities;
 mod completion;

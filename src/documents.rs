@@ -1,14 +1,44 @@
 use itertools::Itertools;
 use log::{debug, info, warn};
 use lspower::lsp::{Diagnostic, Position, Range, TextDocumentContentChangeEvent, Url};
-use pest::error::ErrorVariant;
+use satysfi_parser::{CstText, LineCol, Rule, Span};
 use std::{collections::HashMap, path::PathBuf};
-
-use crate::parser::{Cst, Rule, SyntaxErrorRule};
 
 use self::environments::Environments;
 
 pub mod environments;
+
+pub trait ConvertPos {
+    /// 位置情報 (usize) を lspower の Position へと変換する。
+    fn pos_into(&self, pos: usize) -> Position;
+
+    /// lspower の Position を位置情報 (usize) へと変換する。
+    fn pos_from(&self, pos: &Position) -> usize;
+
+    /// Span を lspower Range へと変換する。
+    fn span_into(&self, span: Span) -> Range;
+
+    /// lspower Range を Span へと変換する。
+    fn span_from(&self, range: Range) -> Span;
+}
+
+impl ConvertPos for CstText {
+    fn pos_into(&self, pos: usize) -> Position {
+        todo!()
+    }
+
+    fn pos_from(&self, pos: &Position) -> usize {
+        todo!()
+    }
+
+    fn span_into(&self, span: Span) -> Range {
+        todo!()
+    }
+
+    fn span_from(&self, range: Range) -> Span {
+        todo!()
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct DocumentCache {
@@ -76,57 +106,34 @@ impl DocumentCache {
 
     pub fn get_diagnostics(&self, url: &Url) -> Vec<Diagnostic> {
         if let Some(doc) = self.docs.get(url) {
-            match &doc.parsed_result {
-                Ok(cst) => {
-                    // dummy syntax をリストアップして diagnostics として返す
+            match doc {
+                DocumentData::ParseSuccessful(csttext) => {
+                    let cst = &csttext.cst;
                     return cst
                         .listup()
                         .into_iter()
                         .filter(|cst| cst.rule.is_error())
                         .map(|err_cst| Diagnostic {
-                            range: err_cst.range.into(),
+                            range: csttext.span_into(err_cst.span),
                             severity: Some(lspower::lsp::DiagnosticSeverity::Error),
                             message: err_cst.rule.error_description().unwrap(),
                             ..Default::default()
                         })
                         .collect_vec();
                 }
-                Err(e) => {
-                    let message = match &e.variant {
-                        ErrorVariant::ParsingError {
-                            positives,
-                            negatives,
-                        } => {
-                            format!(
-                                "Syntax error: positives: {:?}, negatives: {:?}",
-                                positives, negatives
-                            )
-                        }
-                        ErrorVariant::CustomError { message } => message.to_owned(),
-                    };
-                    let range = match e.line_col {
-                        pest::error::LineColLocation::Pos((line, col)) => Range {
-                            start: Position {
-                                line: (line - 1) as u32,
-                                character: (col - 1) as u32,
-                            },
-                            end: Position {
-                                line: (line - 1) as u32,
-                                character: (col - 1) as u32,
-                            },
-                        },
-                        pest::error::LineColLocation::Span((sline, scol), (eline, ecol)) => Range {
-                            start: Position {
-                                line: (sline - 1) as u32,
-                                character: (scol - 1) as u32,
-                            },
-                            end: Position {
-                                line: (eline - 1) as u32,
-                                character: (ecol - 1) as u32,
-                            },
-                        },
-                    };
 
+                DocumentData::ParseFailed {
+                    linecol, expect, ..
+                } => {
+                    let message = format!("Expect: {}", expect.join("\n"));
+                    let err_pos = Position {
+                        line: linecol.line as u32,
+                        character: linecol.column as u32,
+                    };
+                    let range = Range {
+                        start: err_pos,
+                        end: err_pos,
+                    };
                     let diag = Diagnostic {
                         range,
                         severity: Some(lspower::lsp::DiagnosticSeverity::Error),
@@ -142,8 +149,9 @@ impl DocumentCache {
                     return vec![diag];
                 }
             }
+        } else {
+            vec![]
         }
-        vec![]
     }
 
     pub fn get(&self, uri: &Url) -> Option<&DocumentData> {
@@ -153,44 +161,57 @@ impl DocumentCache {
     // for debug
     pub fn show_environments(&self) {
         for var in &self.environments.variable {
-            debug!("name: {}, definition: {}", var.name, var.definition);
+            debug!("name: {}, definition: {:?}", var.name, var.definition);
         }
     }
 }
 
 #[derive(Debug)]
-pub struct DocumentData {
-    pub text: String,
-    pub parsed_result: std::result::Result<Cst, pest::error::Error<Rule>>,
+pub enum DocumentData {
+    /// peg のパースに成功した場合。
+    ParseSuccessful(CstText),
+    /// peg のパースに失敗した場合。
+    ParseFailed {
+        /// テキストそのもの
+        text: String,
+        /// エラー位置
+        linecol: LineCol,
+        /// 期待する文字集合
+        expect: Vec<&'static str>,
+    },
 }
 
 impl DocumentData {
     pub fn new(text: &str) -> Self {
-        let parsed_result = Cst::parse(text, Rule::program);
-        let text = text.to_owned();
-        Self {
-            text,
-            parsed_result,
+        match CstText::parse(text, satysfi_parser::grammar::program) {
+            Ok(csttext) => DocumentData::ParseSuccessful(csttext),
+            Err((linecol, expect)) => DocumentData::ParseFailed {
+                text: text.to_string(),
+                linecol,
+                expect,
+            },
         }
     }
 
     pub fn get_dependencies(&self, url: &Url) -> Vec<Dependency> {
         let mut deps = vec![];
-        let program = match &self.parsed_result {
-            Ok(p) => p,
-            Err(_) => return vec![],
+        let csttext = match self {
+            DocumentData::ParseFailed { .. } => return vec![],
+            DocumentData::ParseSuccessful(csttext) => csttext,
         };
         let home_path = std::env::var("HOME").map(PathBuf::from).ok();
         let file_path = url.to_file_path().ok();
 
+        let program = &csttext.cst;
+
         let require_pkgnames = program
             .pickup(Rule::header_require)
             .into_iter()
-            .map(|require| require.inner.get(0).unwrap().as_str(&self.text));
+            .map(|require| require.inner.get(0).unwrap().as_str(&csttext.text));
         let import_pkgnames = program
             .pickup(Rule::header_import)
             .into_iter()
-            .map(|import| import.inner.get(0).unwrap().as_str(&self.text));
+            .map(|import| import.inner.get(0).unwrap().as_str(&csttext.text));
 
         // require 系のパッケージの依存関係追加
         if let Some(home_path) = home_path {
@@ -242,4 +263,10 @@ pub struct Dependency {
 pub enum DependencyKind {
     Require,
     Import,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SourceSpan {
+    pub url: Url,
+    pub span: Span,
 }

@@ -13,9 +13,12 @@ use std::{collections::HashSet, sync::Arc};
 use lspower::Client;
 
 use crate::{
-    completion::get_primitive_list, config::Config, diagnostics::DiagnosticCollection,
-    documents::DocumentCache, parser::Rule,
+    completion::get_primitive_list,
+    config::Config,
+    diagnostics::DiagnosticCollection,
+    documents::{ConvertPos, DocumentCache, DocumentData},
 };
+use satysfi_parser::Rule;
 
 use crate::capabilities;
 
@@ -157,13 +160,9 @@ impl Inner {
         debug!("pos: {:?}", pos);
         debug!("Doing goto definition");
 
-        if let Some(cst) = self
-            .documents
-            .get(&uri)
-            .and_then(|data| data.parsed_result.as_ref().ok())
-        {
+        if let Some(DocumentData::ParseSuccessful(csttext)) = self.documents.get(&uri) {
+            let cst = &csttext.cst;
             let envs = &self.documents.environments;
-            let text = &self.documents.get(&uri).unwrap().text;
             let available_rules: HashSet<_> = [
                 Rule::var,
                 Rule::inline_cmd_name,
@@ -172,24 +171,26 @@ impl Inner {
             ]
             .iter()
             .collect();
-            let cst_var = cst.dig(&pos).into_iter().find(|&cst| {
-                debug!("{:?}: {:?}", cst.rule, cst.range);
+            let pos = csttext.pos_from(&pos);
+            let cst_var = cst.dig(pos).into_iter().find(|&cst| {
+                // debug!("{:?}: {:?}", cst.rule, cst.span);
                 available_rules.contains(&cst.rule)
             });
             let source_range = if let Some(cst_var) = cst_var {
-                info!("cst_var: {:?}", cst_var.as_str(text));
+                let var_name = csttext.get_text(cst_var);
+                info!("cst_var: {:?}", var_name);
                 match cst_var.rule {
                     Rule::var => {
                         let variable = envs.variable.iter().find(|v| {
                             v.kind == crate::documents::environments::VariableKind::Variable
-                                && v.name == cst_var.as_str(text)
+                                && v.name == var_name
                         });
                         variable.map(|variable| &variable.definition)
                     }
                     Rule::inline_cmd_name => {
                         let cmd = envs.variable.iter().find(|v| {
                             v.kind == crate::documents::environments::VariableKind::InlineCmd
-                                && v.name == cst_var.as_str(text)
+                                && v.name == var_name
                         });
                         cmd.map(|cmd| &cmd.definition)
                     }
@@ -197,7 +198,7 @@ impl Inner {
                         let cmd = envs.variable.iter().find(|v| {
                             debug!("v: {:?}", v);
                             v.kind == crate::documents::environments::VariableKind::BlockCmd
-                                && v.name == cst_var.as_str(text)
+                                && v.name == var_name
                         });
                         info!("matched command: {:?}", cmd);
                         cmd.map(|cmd| &cmd.definition)
@@ -205,7 +206,7 @@ impl Inner {
                     Rule::math_cmd_name => {
                         let cmd = envs.variable.iter().find(|v| {
                             v.kind == crate::documents::environments::VariableKind::MathCmd
-                                && v.name == cst_var.as_str(text)
+                                && v.name == var_name
                         });
                         cmd.map(|cmd| &cmd.definition)
                     }
@@ -217,7 +218,7 @@ impl Inner {
             let resp = source_range.map(|source_range| {
                 GotoDefinitionResponse::Scalar(Location {
                     uri: source_range.url.clone(),
-                    range: source_range.range.into(),
+                    range: csttext.span_into(source_range.span),
                 })
             });
             return Ok(resp);
@@ -229,41 +230,44 @@ impl Inner {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        if let Some(doc_data) = self.documents.get(&uri) {
-            if let Ok(cst) = &doc_data.parsed_result {
-                // 与えられた pos が含むような Rule::var を探す
-                let cst_var = cst.dig(&pos).into_iter().find(|&cst| cst.rule == Rule::var);
-                if let Some(cst_var) = cst_var {
-                    let var_name = cst_var.as_str(&doc_data.text);
-                    let cst_range = cst_var.range.clone().into();
-                    // 与えられた var_name の primitive を探す
-                    let items = crate::completion::get_resouce_items();
-                    let primitive = items
-                        .get("primitive")
-                        .and_then(|v| v.iter().find(|&item| item.label == var_name));
-                    if let Some(primitive) = primitive {
-                        let hover = Hover {
-                            contents: HoverContents::Array(vec![
-                                MarkedString::LanguageString(LanguageString {
-                                    language: "satysfi".to_owned(),
-                                    value: primitive
-                                        .detail
-                                        .as_deref()
-                                        .unwrap_or("primitive")
-                                        .to_owned(),
-                                }),
-                                MarkedString::String(
-                                    primitive
-                                        .documentation
-                                        .as_deref()
-                                        .unwrap_or("undocumented")
-                                        .to_string(),
-                                ),
-                            ]),
-                            range: Some(cst_range),
-                        };
-                        return Ok(Some(hover));
-                    }
+        if let Some(DocumentData::ParseSuccessful(csttext)) = self.documents.get(&uri) {
+            // 与えられた pos が含むような Rule::var を探す
+            let pos = csttext.pos_from(&pos);
+            let cst_var = csttext
+                .cst
+                .dig(pos)
+                .into_iter()
+                .find(|&cst| cst.rule == Rule::var);
+            if let Some(cst_var) = cst_var {
+                let var_name = csttext.get_text(cst_var);
+                let cst_range = csttext.span_into(cst_var.span);
+                // 与えられた var_name の primitive を探す
+                let items = crate::completion::get_resouce_items();
+                let primitive = items
+                    .get("primitive")
+                    .and_then(|v| v.iter().find(|&item| item.label == var_name));
+                if let Some(primitive) = primitive {
+                    let hover = Hover {
+                        contents: HoverContents::Array(vec![
+                            MarkedString::LanguageString(LanguageString {
+                                language: "satysfi".to_owned(),
+                                value: primitive
+                                    .detail
+                                    .as_deref()
+                                    .unwrap_or("primitive")
+                                    .to_owned(),
+                            }),
+                            MarkedString::String(
+                                primitive
+                                    .documentation
+                                    .as_deref()
+                                    .unwrap_or("undocumented")
+                                    .to_string(),
+                            ),
+                        ]),
+                        range: Some(cst_range),
+                    };
+                    return Ok(Some(hover));
                 }
             }
         }
