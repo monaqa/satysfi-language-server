@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use lspower::lsp::Url;
-use satysfi_parser::{CstText, LineCol, Span};
+use satysfi_parser::{CstText, LineCol, Rule, Span};
 
 /// オンメモリで取り扱うデータをまとめたデータ構造。
 #[derive(Debug, Default)]
@@ -31,10 +31,10 @@ pub enum DocumentData {
 
 impl DocumentData {
     /// テキストから新たな DocumentData を作成する。
-    pub fn new(text: &str) -> DocumentData {
+    pub fn new(text: &str, url: &Url) -> DocumentData {
         match CstText::parse(text, satysfi_parser::grammar::program) {
             Ok(csttext) => {
-                let environment = Environment::new(&csttext);
+                let environment = Environment::new(&csttext, &url);
                 DocumentData::Parsed {
                     csttext,
                     environment,
@@ -55,7 +55,7 @@ impl DocumentData {
 /// 変数やコマンドに関する情報。
 #[derive(Debug, Default)]
 pub struct Environment {
-    pub dependencys: Vec<Package>,
+    pub dependencies: Vec<Dependency>,
     pub modules: Vec<Module>,
     /// package にて定義された変数。
     pub variables: Vec<Variable>,
@@ -72,23 +72,98 @@ pub struct Environment {
 }
 
 impl Environment {
-    fn new(csttext: &CstText) -> Environment {
+    fn new(csttext: &CstText, url: &Url) -> Environment {
+        let dependencies = Dependency::extract(csttext, url);
         todo!()
     }
 }
 
 #[derive(Debug)]
-pub struct Package {
+pub struct Dependency {
     /// パッケージ名。
     name: String,
-    /// 場所。
-    url: Url,
+    /// require か import か。
+    kind: DependencyKind,
+    /// `@require:` や `@import` が呼ばれている場所。
+    definition: Span,
+    /// 実際のファイルパス。パスを解決できなかったら None を返す。
+    url: Option<Url>,
 }
 
-impl Package {
+#[derive(Debug)]
+pub enum DependencyKind {
+    Require,
+    Import,
+}
+
+impl Dependency {
     /// 具象構文木からパッケージ情報を取り出す。
-    fn extract(csttext: &CstText) -> Vec<Package> {
-        todo!()
+    fn extract(csttext: &CstText, url: &Url) -> Vec<Dependency> {
+        let mut deps = vec![];
+        let home_path = std::env::var("HOME").map(PathBuf::from).ok();
+        let file_path = url.to_file_path().ok();
+
+        let program = &csttext.cst;
+
+        let require_packages = program
+            .pickup(Rule::header_require)
+            .into_iter()
+            .map(|require| require.inner.get(0).unwrap());
+
+        let import_packages = program
+            .pickup(Rule::header_import)
+            .into_iter()
+            .map(|import| import.inner.get(0).unwrap());
+
+        // require 系のパッケージの依存関係追加
+        if let Some(home_path) = home_path {
+            let dist_path = home_path.join(".satysfi/dist/packages");
+
+            let require_dependencies = require_packages.map(|pkg| {
+                let pkgname = csttext.get_text(pkg);
+                // TODO: consider satyg file
+                let pkg_path = dist_path.join(format!("{}.satyh", pkgname));
+                let url = if pkg_path.exists() {
+                    Url::from_file_path(pkg_path).ok()
+                } else {
+                    None
+                };
+                Dependency {
+                    name: pkgname.to_owned(),
+                    kind: DependencyKind::Require,
+                    definition: pkg.span,
+                    url,
+                }
+            });
+
+            deps.extend(require_dependencies);
+        }
+
+        if let Some(file_path) = file_path {
+            // TODO: add validate
+            let parent_path = file_path.parent().unwrap();
+
+            let import_dependencies = import_packages.map(|pkg| {
+                let pkgname = csttext.get_text(pkg);
+                // TODO: consider satyg file
+                let pkg_path = parent_path.join(format!("{}.satyh", pkgname));
+                let url = if pkg_path.exists() {
+                    Url::from_file_path(pkg_path).ok()
+                } else {
+                    None
+                };
+                Dependency {
+                    name: pkgname.to_owned(),
+                    kind: DependencyKind::Import,
+                    definition: pkg.span,
+                    url,
+                }
+            });
+
+            deps.extend(import_dependencies);
+        }
+
+        deps
     }
 }
 

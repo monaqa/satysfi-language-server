@@ -128,7 +128,7 @@ impl Inner {
         let url = params.text_document.uri;
         if let Some(cc) = params.content_changes.into_iter().last() {
             let text = cc.text;
-            let doc_data = DocumentData::new(&text);
+            let doc_data = DocumentData::new(&text, &url);
         } else {
             error!("failed to extract changes of document {:?}!", url);
         }
