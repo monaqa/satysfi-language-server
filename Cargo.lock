@@ -659,6 +659,7 @@ dependencies = [
 [[package]]
 name = "satysfi-parser"
 version = "0.1.0"
+source = "git+https://github.com/monaqa/satysfi-parser?branch=master#1fa117bdb7a452ccf1cde173aa22fe84efcf2d91"
 dependencies = [
  "anyhow",
  "itertools",

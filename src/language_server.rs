@@ -13,10 +13,8 @@ use std::{collections::HashSet, sync::Arc};
 use lspower::Client;
 
 use crate::{
-    completion::get_primitive_list,
-    config::Config,
-    diagnostics::DiagnosticCollection,
-    documents::{ConvertPos, DocumentCache, DocumentData},
+    completion::get_primitive_list, config::Config, diagnostics::DiagnosticCollection,
+    documents::DocumentCache,
 };
 use satysfi_parser::Rule;
 
@@ -124,32 +122,11 @@ impl Inner {
         Ok(Some(resp))
     }
 
-    async fn did_change(&mut self, params: DidChangeTextDocumentParams) {
-        let uri = params.text_document.uri;
-        let changes = params.content_changes;
-        self.documents.update(&uri, &changes);
-        let diags = self.documents.get_diagnostics(&uri);
+    async fn did_change(&mut self, params: DidChangeTextDocumentParams) {}
 
-        self.client.publish_diagnostics(uri, diags, None).await;
-    }
+    async fn did_open(&mut self, params: DidOpenTextDocumentParams) {}
 
-    async fn did_open(&mut self, params: DidOpenTextDocumentParams) {
-        let uri = params.text_document.uri;
-        let text = params.text_document.text;
-
-        // 開いたドキュメントの情報を追加
-        self.documents.insert(&uri, &text);
-        let diags = self.documents.get_diagnostics(&uri);
-
-        // 依存先の情報を追加
-        // self.documents.get(&uri).
-
-        self.client.publish_diagnostics(uri, diags, None).await;
-    }
-
-    async fn did_save(&mut self, params: DidSaveTextDocumentParams) {
-        self.documents.show_environments();
-    }
+    async fn did_save(&mut self, params: DidSaveTextDocumentParams) {}
 
     async fn goto_definition(
         &mut self,
@@ -158,119 +135,12 @@ impl Inner {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        if let Some(DocumentData::ParseSuccessful(csttext)) = self.documents.get(&uri) {
-            let cst = &csttext.cst;
-            let envs = &self.documents.environments;
-            let available_rules: HashSet<_> = [
-                Rule::var,
-                Rule::inline_cmd_name,
-                Rule::block_cmd_name,
-                Rule::math_cmd_name,
-            ]
-            .iter()
-            .collect();
-            let pos = csttext.pos_from(&pos);
-            let cst_var = cst
-                .dig(pos)
-                .into_iter()
-                .find(|&cst| available_rules.contains(&cst.rule));
-            let sourcespan = if let Some(cst_var) = cst_var {
-                let var_name = csttext.get_text(cst_var);
-                match cst_var.rule {
-                    Rule::var => {
-                        let variable = envs.variable.iter().find(|v| {
-                            v.kind == crate::documents::environments::VariableKind::Variable
-                                && v.name == var_name
-                        });
-                        variable.map(|variable| &variable.definition)
-                    }
-                    Rule::inline_cmd_name => {
-                        let cmd = envs.variable.iter().find(|v| {
-                            v.kind == crate::documents::environments::VariableKind::InlineCmd
-                                && v.name == var_name
-                        });
-                        cmd.map(|cmd| &cmd.definition)
-                    }
-                    Rule::block_cmd_name => {
-                        let cmd = envs.variable.iter().find(|v| {
-                            info!("v: {:?}", v);
-                            v.kind == crate::documents::environments::VariableKind::BlockCmd
-                                && v.name == var_name
-                        });
-                        info!("matched command: {:?}", cmd);
-                        cmd.map(|cmd| &cmd.definition)
-                    }
-                    Rule::math_cmd_name => {
-                        let cmd = envs.variable.iter().find(|v| {
-                            v.kind == crate::documents::environments::VariableKind::MathCmd
-                                && v.name == var_name
-                        });
-                        cmd.map(|cmd| &cmd.definition)
-                    }
-                    _ => unreachable!(),
-                }
-            } else {
-                None
-            };
-            if let Some(sourcespan) = sourcespan {
-                let doc_data = self.documents.get(&sourcespan.url);
-                if let Some(DocumentData::ParseSuccessful(source_csttext)) = doc_data {
-                    let resp = GotoDefinitionResponse::Scalar(Location {
-                        uri: sourcespan.url.clone(),
-                        range: source_csttext.span_into(sourcespan.span),
-                    });
-                    return Ok(Some(resp));
-                }
-            }
-        }
-        Ok(None)
+        todo!()
     }
 
     async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-
-        if let Some(DocumentData::ParseSuccessful(csttext)) = self.documents.get(&uri) {
-            // 与えられた pos が含むような Rule::var を探す
-            let pos = csttext.pos_from(&pos);
-            let cst_var = csttext
-                .cst
-                .dig(pos)
-                .into_iter()
-                .find(|&cst| cst.rule == Rule::var);
-            if let Some(cst_var) = cst_var {
-                let var_name = csttext.get_text(cst_var);
-                let cst_range = csttext.span_into(cst_var.span);
-                // 与えられた var_name の primitive を探す
-                let items = crate::completion::get_resouce_items();
-                let primitive = items
-                    .get("primitive")
-                    .and_then(|v| v.iter().find(|&item| item.label == var_name));
-                if let Some(primitive) = primitive {
-                    let hover = Hover {
-                        contents: HoverContents::Array(vec![
-                            MarkedString::LanguageString(LanguageString {
-                                language: "satysfi".to_owned(),
-                                value: primitive
-                                    .detail
-                                    .as_deref()
-                                    .unwrap_or("primitive")
-                                    .to_owned(),
-                            }),
-                            MarkedString::String(
-                                primitive
-                                    .documentation
-                                    .as_deref()
-                                    .unwrap_or("undocumented")
-                                    .to_string(),
-                            ),
-                        ]),
-                        range: Some(cst_range),
-                    };
-                    return Ok(Some(hover));
-                }
-            }
-        }
 
         Ok(None)
     }

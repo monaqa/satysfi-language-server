@@ -1,290 +1,181 @@
-use itertools::Itertools;
-use log::{debug, error, info, warn};
-use lspower::lsp::{Diagnostic, Position, Range, TextDocumentContentChangeEvent, Url};
-use satysfi_parser::{CstText, LineCol, Rule, Span};
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
-use self::environments::Environments;
+use lspower::lsp::Url;
+use satysfi_parser::{CstText, LineCol, Span};
 
-pub mod environments;
-
-pub trait ConvertPos {
-    /// 位置情報 (usize) を lspower の Position へと変換する。
-    fn pos_into(&self, pos: usize) -> Position;
-
-    /// lspower の Position を位置情報 (usize) へと変換する。
-    fn pos_from(&self, pos: &Position) -> usize;
-
-    /// Span を lspower Range へと変換する。
-    fn span_into(&self, span: Span) -> Range;
-
-    /// lspower Range を Span へと変換する。
-    fn span_from(&self, range: Range) -> Span;
-}
-
-impl ConvertPos for CstText {
-    fn pos_into(&self, pos: usize) -> Position {
-        let lc = self.get_line_col(pos).unwrap_or_else(|| {
-            error!("Converting position (parser -> LSP) failed. pos:{}", pos);
-            panic!()
-        });
-        Position {
-            line: lc.line as u32,
-            character: lc.column as u32,
-        }
-    }
-
-    fn pos_from(&self, pos: &Position) -> usize {
-        self.from_line_col(pos.line as usize, pos.character as usize)
-            .unwrap_or_else(|| {
-                error!("Converting position (LSP -> parser) failed. pos: {:?}", pos);
-                panic!()
-            })
-    }
-
-    fn span_into(&self, span: Span) -> Range {
-        let start = self.pos_into(span.start);
-        let end = self.pos_into(span.end);
-        Range { start, end }
-    }
-
-    fn span_from(&self, range: Range) -> Span {
-        let start = self.pos_from(&range.start);
-        let end = self.pos_from(&range.end);
-        Span { start, end }
-    }
-}
-
+/// オンメモリで取り扱うデータをまとめたデータ構造。
 #[derive(Debug, Default)]
-pub struct DocumentCache {
-    pub docs: HashMap<Url, DocumentData>,
-    pub environments: Environments,
-}
+pub struct DocumentCache(HashMap<Url, DocumentData>);
 
-impl DocumentCache {
-    pub fn insert(&mut self, uri: &Url, text: &str) {
-        let document_data = DocumentData::new(text);
-        self.environments.update(uri, &document_data);
-
-        let deps = document_data.get_dependencies(uri);
-        for dep in deps {
-            let fpath = match dep.url.to_file_path() {
-                Ok(f) => f,
-                Err(_) => {
-                    continue;
-                }
-            };
-            let text = match std::fs::read_to_string(fpath) {
-                Ok(t) => t,
-                Err(_) => {
-                    continue;
-                }
-            };
-            let dep_data = DocumentData::new(&text);
-            self.environments.update(&dep.url, &dep_data);
-            self.docs.insert(dep.url.clone(), dep_data);
-        }
-
-        self.docs.insert(uri.clone(), document_data);
-    }
-
-    pub fn update(&mut self, uri: &Url, changes: &[TextDocumentContentChangeEvent]) {
-        // text document sync は一旦 full で行う
-        // TODO: TextDocumentSyncKind::Incremental のほうがおそらくパフォーマンスが高い
-        if let Some(change) = changes.get(0) {
-            let text = &change.text;
-            let document_data = DocumentData::new(text);
-            self.environments.update(&uri, &document_data);
-
-            let deps = document_data.get_dependencies(uri);
-            for dep in deps {
-                let fpath = match dep.url.to_file_path() {
-                    Ok(f) => f,
-                    Err(_) => {
-                        continue;
-                    }
-                };
-                let text = match std::fs::read_to_string(fpath) {
-                    Ok(t) => t,
-                    Err(_) => {
-                        continue;
-                    }
-                };
-                let dep_data = DocumentData::new(&text);
-                self.environments.update(&dep.url, &dep_data);
-                self.docs.insert(dep.url.clone(), dep_data);
-            }
-
-            self.docs.insert(uri.clone(), document_data);
-        }
-    }
-
-    pub fn get_diagnostics(&self, url: &Url) -> Vec<Diagnostic> {
-        if let Some(doc) = self.docs.get(url) {
-            match doc {
-                DocumentData::ParseSuccessful(csttext) => {
-                    let cst = &csttext.cst;
-                    return cst
-                        .listup()
-                        .into_iter()
-                        .filter(|cst| cst.rule.is_error())
-                        .map(|err_cst| Diagnostic {
-                            range: csttext.span_into(err_cst.span),
-                            severity: Some(lspower::lsp::DiagnosticSeverity::Error),
-                            message: err_cst
-                                .rule
-                                .error_description()
-                                .unwrap_or_else(|| "No message".to_owned()),
-                            ..Default::default()
-                        })
-                        .collect_vec();
-                }
-
-                DocumentData::ParseFailed {
-                    linecol, expect, ..
-                } => {
-                    let message = format!("Expect: {}", expect.join("\n"));
-                    let err_pos = Position {
-                        line: linecol.line as u32,
-                        character: linecol.column as u32,
-                    };
-                    let range = Range {
-                        start: err_pos,
-                        end: err_pos,
-                    };
-                    let diag = Diagnostic {
-                        range,
-                        severity: Some(lspower::lsp::DiagnosticSeverity::Error),
-                        // code: (),
-                        // code_description: (),
-                        // source: (),
-                        message,
-                        // related_information: (),
-                        // tags: (),
-                        // data: (),
-                        ..Default::default()
-                    };
-                    return vec![diag];
-                }
-            }
-        } else {
-            vec![]
-        }
-    }
-
-    pub fn get(&self, uri: &Url) -> Option<&DocumentData> {
-        self.docs.get(uri)
-    }
-
-    // for debug
-    pub fn show_environments(&self) {
-        for var in &self.environments.variable {
-            debug!("name: {}, definition: {:?}", var.name, var.definition);
-        }
-    }
-}
-
+/// 一つのファイルに関するデータを纏めたデータ構造。
 #[derive(Debug)]
 pub enum DocumentData {
-    /// peg のパースに成功した場合。
-    ParseSuccessful(CstText),
-    /// peg のパースに失敗した場合。
-    ParseFailed {
-        /// テキストそのもの
+    /// パーサによって正常にパースできたデータ。
+    Parsed {
+        /// パース結果の具象構文木 + テキスト本体。
+        csttext: CstText,
+        /// 変数やコマンドに関する情報。
+        environment: Environment,
+    },
+
+    /// パーサによってパースできなかったデータ。
+    NotParsed {
+        /// テキスト本体。
         text: String,
-        /// エラー位置
+        /// エラー箇所。
         linecol: LineCol,
-        /// 期待する文字集合
+        /// エラー箇所にて期待するパターン（終端記号）列。
         expect: Vec<&'static str>,
     },
 }
 
-impl DocumentData {
-    pub fn new(text: &str) -> Self {
-        match CstText::parse(text, satysfi_parser::grammar::program) {
-            Ok(csttext) => DocumentData::ParseSuccessful(csttext),
-            Err((linecol, expect)) => DocumentData::ParseFailed {
-                text: text.to_string(),
-                linecol,
-                expect,
-            },
-        }
-    }
-
-    pub fn get_dependencies(&self, url: &Url) -> Vec<Dependency> {
-        let mut deps = vec![];
-        let csttext = match self {
-            DocumentData::ParseFailed { .. } => return vec![],
-            DocumentData::ParseSuccessful(csttext) => csttext,
-        };
-        let home_path = std::env::var("HOME").map(PathBuf::from).ok();
-        let file_path = url.to_file_path().ok();
-
-        let program = &csttext.cst;
-
-        let require_pkgnames = program
-            .pickup(Rule::header_require)
-            .into_iter()
-            .map(|require| require.inner.get(0).unwrap().as_str(&csttext.text));
-        let import_pkgnames = program
-            .pickup(Rule::header_import)
-            .into_iter()
-            .map(|import| import.inner.get(0).unwrap().as_str(&csttext.text));
-
-        // require 系のパッケージの依存関係追加
-        if let Some(home_path) = home_path {
-            let dist_path = home_path.join(".satysfi/dist/packages");
-
-            for pkgname in require_pkgnames {
-                // TODO: *.satyg file
-                let pkg_path = dist_path.join(format!("{}.satyh", pkgname));
-                if pkg_path.exists() {
-                    if let Ok(url) = Url::from_file_path(pkg_path) {
-                        deps.push(Dependency {
-                            kind: DependencyKind::Require,
-                            url,
-                        });
-                    }
-                }
-            }
-        }
-
-        if let Some(file_path) = file_path {
-            // unwrap して大丈夫？
-            let parent_path = file_path.parent().unwrap();
-
-            for pkgname in import_pkgnames {
-                // TODO: *.satyg file
-                let pkg_path = parent_path.join(format!("{}.satyh", pkgname));
-                if pkg_path.exists() {
-                    if let Ok(url) = Url::from_file_path(pkg_path) {
-                        deps.push(Dependency {
-                            kind: DependencyKind::Import,
-                            url,
-                        });
-                    }
-                }
-            }
-        }
-
-        deps
-    }
+/// 変数やコマンドに関する情報。
+#[derive(Debug)]
+pub struct Environment {
+    pub dependencys: Vec<Package>,
+    pub modules: Vec<Module>,
+    /// package にて定義された変数。
+    pub variables: Vec<Variable>,
+    /// package にて定義された型。
+    pub types: Vec<CustomType>,
+    /// package にて定義されたヴァリアント。
+    pub variants: Vec<Variant>,
+    /// package にて定義されたインラインコマンド。
+    pub inline_cmds: Vec<InlineCmd>,
+    /// package にて定義されたブロックコマンド。
+    pub block_cmds: Vec<BlockCmd>,
+    /// package にて定義された数式コマンド。
+    pub math_cmds: Vec<MathCmd>,
 }
 
 #[derive(Debug)]
-pub struct Dependency {
-    kind: DependencyKind,
+pub struct Package {
+    /// パッケージ名。
+    name: String,
+    /// 場所。
     url: Url,
 }
 
 #[derive(Debug)]
-pub enum DependencyKind {
-    Require,
-    Import,
+pub struct Module {
+    /// Module の名前。
+    pub name: String,
+    /// module にて定義された変数。
+    pub variables: Vec<Variable>,
+    /// module にて定義された型。
+    pub types: Vec<CustomType>,
+    /// module にて定義されたヴァリアント。
+    pub variants: Vec<Variant>,
+    /// module にて定義されたインラインコマンド。
+    pub inline_cmds: Vec<InlineCmd>,
+    /// module にて定義されたブロックコマンド。
+    pub block_cmds: Vec<BlockCmd>,
+    /// module にて定義された数式コマンド。
+    pub math_cmds: Vec<MathCmd>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct SourceSpan {
-    pub url: Url,
-    pub span: Span,
+/// package 内で定義された変数やコマンドなど。
+#[derive(Debug)]
+pub struct PackageComponent<T> {
+    /// 可視性。外から見えるかどうか。
+    pub visibility: PackageVisibility,
+    /// 本体。
+    pub body: T,
+    /// スコープ。すなわち、対象となるファイルの中で、
+    /// その変数や型、コマンドなどを使うことができる領域。
+    pub scope: Span,
+    /// 定義がどこにあるか (position)。
+    pub pos_definition: usize,
+}
+
+/// module 内で定義された変数やコマンドなど。
+#[derive(Debug)]
+pub struct ModuleComponent<T> {
+    /// 可視性。外から見えるかどうか。
+    pub visibility: ModuleVisibility,
+    /// 本体。
+    pub body: T,
+    /// スコープ。すなわち、対象となるファイルの中で、
+    /// その変数や型、コマンドなどを使うことができる領域。
+    pub scope: Span,
+    /// sig 内部で declaration しているとき、その declaration がどこにあるか (position)。
+    pub pos_declaration: Option<usize>,
+    /// 定義がどこにあるか (position)。
+    pub pos_definition: usize,
+}
+
+#[derive(Debug)]
+pub struct Variable {
+    /// 変数名。
+    name: String,
+    /// 変数の型（既知の場合）。
+    type_: Option<String>,
+    /// let 式に型情報を書いている場合、その場所。
+    type_declaration: Option<Span>,
+}
+
+#[derive(Debug)]
+pub struct CustomType {
+    /// 型名。
+    name: String,
+    /// 型の定義。
+    definition: String,
+}
+
+#[derive(Debug)]
+pub struct Variant {
+    /// variant 名。
+    name: String,
+    /// その Variant を持つ型の名前。
+    type_name: String,
+}
+
+#[derive(Debug)]
+pub struct InlineCmd {
+    /// コマンド名。
+    name: String,
+    /// 型情報。
+    type_: Option<Vec<String>>,
+    /// 型情報の載っている場所。
+    type_declaration: Option<Span>,
+}
+
+#[derive(Debug)]
+pub struct BlockCmd {
+    /// コマンド名。
+    name: String,
+    /// 型情報。
+    type_: Option<Vec<String>>,
+    /// 型情報の載っている場所。
+    type_declaration: Option<Span>,
+}
+
+#[derive(Debug)]
+pub struct MathCmd {
+    /// コマンド名。
+    name: String,
+    /// 型情報。
+    type_: Option<Vec<String>>,
+    /// 型情報の載っている場所。
+    type_declaration: Option<Span>,
+}
+
+#[derive(Debug)]
+pub enum PackageVisibility {
+    /// let_stmt などで定義された値。そのpackageを追加すると使用できる類のもの。
+    Public,
+    /// なにかの式で変数束縛を行う際に定義された一時的な変数。
+    Binded,
+}
+
+#[derive(Debug)]
+pub enum ModuleVisibility {
+    /// sig にて direct に宣言されたもの。 Module. が無くとも使うことができる。
+    Direct,
+    /// sig にて val で宣言されたもの。 Module.* の形で、または open Module すれば使用できる。
+    Public,
+    /// sig にて宣言されていないもの。 Module の外からは呼び出せない。
+    Private,
+    /// なにかの式で変数束縛を行う際に定義された一時的な変数。
+    Binded,
 }
