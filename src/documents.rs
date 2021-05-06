@@ -29,8 +29,31 @@ pub enum DocumentData {
     },
 }
 
+impl DocumentData {
+    /// テキストから新たな DocumentData を作成する。
+    pub fn new(text: &str) -> DocumentData {
+        match CstText::parse(text, satysfi_parser::grammar::program) {
+            Ok(csttext) => {
+                let environment = Environment::new(&csttext);
+                DocumentData::Parsed {
+                    csttext,
+                    environment,
+                }
+            }
+            Err((linecol, expect)) => {
+                let text = text.to_owned();
+                DocumentData::NotParsed {
+                    text,
+                    linecol,
+                    expect,
+                }
+            }
+        }
+    }
+}
+
 /// 変数やコマンドに関する情報。
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Environment {
     pub dependencys: Vec<Package>,
     pub modules: Vec<Module>,
@@ -48,12 +71,25 @@ pub struct Environment {
     pub math_cmds: Vec<MathCmd>,
 }
 
+impl Environment {
+    fn new(csttext: &CstText) -> Environment {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct Package {
     /// パッケージ名。
     name: String,
     /// 場所。
     url: Url,
+}
+
+impl Package {
+    /// 具象構文木からパッケージ情報を取り出す。
+    fn extract(csttext: &CstText) -> Vec<Package> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]

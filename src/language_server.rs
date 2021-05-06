@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::{debug, error, info};
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
@@ -13,8 +13,10 @@ use std::{collections::HashSet, sync::Arc};
 use lspower::Client;
 
 use crate::{
-    completion::get_primitive_list, config::Config, diagnostics::DiagnosticCollection,
-    documents::DocumentCache,
+    completion::get_primitive_list,
+    config::Config,
+    diagnostics::DiagnosticCollection,
+    documents::{DocumentCache, DocumentData},
 };
 use satysfi_parser::Rule;
 
@@ -122,7 +124,15 @@ impl Inner {
         Ok(Some(resp))
     }
 
-    async fn did_change(&mut self, params: DidChangeTextDocumentParams) {}
+    async fn did_change(&mut self, params: DidChangeTextDocumentParams) {
+        let url = params.text_document.uri;
+        if let Some(cc) = params.content_changes.into_iter().last() {
+            let text = cc.text;
+            let doc_data = DocumentData::new(&text);
+        } else {
+            error!("failed to extract changes of document {:?}!", url);
+        }
+    }
 
     async fn did_open(&mut self, params: DidOpenTextDocumentParams) {}
 
