@@ -1,10 +1,62 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use lspower::lsp::{CompletionItem, Documentation, InsertTextFormat, MarkupContent, MarkupKind};
+use lspower::lsp::{
+    CompletionItem, CompletionList, CompletionResponse, Documentation, InsertTextFormat,
+    MarkupContent, MarkupKind, Position, Url,
+};
 use serde::Deserialize;
 
+use crate::documents::DocumentData;
+
 pub const COMPLETION_RESOUCES: &str = include_str!("resource/completion_items.toml");
+
+pub fn get_completion_list(
+    doc_data: &DocumentData,
+    url: &Url,
+    pos: &Position,
+) -> Option<CompletionResponse> {
+    let mut items = vec![];
+
+    items.extend(get_variable_list(doc_data, url, pos));
+
+    items.extend(get_primitive_list());
+    Some(CompletionResponse::List(CompletionList {
+        is_incomplete: false,
+        items,
+    }))
+}
+
+pub fn get_variable_list(
+    doc_data: &DocumentData,
+    url: &Url,
+    pos: &Position,
+) -> Vec<CompletionItem> {
+    match doc_data {
+        DocumentData::Parsed {
+            csttext,
+            environment,
+        } => {
+            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
+            if let Some(pos_usize) =
+                csttext.from_line_col(pos.line as usize, pos.character as usize)
+            {
+                // TODO: 依存パッケージを遡って検索
+                environment
+                    .variables
+                    .iter()
+                    .filter(|var| var.scope.includes(pos_usize))
+                    .map(|var| {
+                        CompletionItem::new_simple(var.body.name.clone(), "in this file".to_owned())
+                    })
+                    .collect()
+            } else {
+                vec![]
+            }
+        }
+        DocumentData::NotParsed { .. } => vec![],
+    }
+}
 
 pub fn get_primitive_list() -> Vec<CompletionItem> {
     let resources = get_resouce_items();

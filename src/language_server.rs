@@ -13,7 +13,7 @@ use std::{collections::HashSet, sync::Arc};
 use lspower::Client;
 
 use crate::{
-    completion::get_primitive_list,
+    completion::{get_completion_list, get_primitive_list},
     config::Config,
     diagnostics::DiagnosticCollection,
     documents::{DocumentCache, DocumentData},
@@ -114,14 +114,15 @@ impl Inner {
 
     async fn get_completion(
         &self,
-        _params: CompletionParams,
+        params: CompletionParams,
     ) -> LspResult<Option<CompletionResponse>> {
-        let items = get_primitive_list();
-        let resp = CompletionResponse::List(CompletionList {
-            is_incomplete: true,
-            items,
-        });
-        Ok(Some(resp))
+        let url = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        if let Some(doc_data) = self.documents.0.get(&url) {
+            Ok(get_completion_list(doc_data, &url, &pos))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn did_change(&mut self, params: DidChangeTextDocumentParams) {
@@ -129,14 +130,29 @@ impl Inner {
         if let Some(cc) = params.content_changes.into_iter().last() {
             let text = cc.text;
             let doc_data = DocumentData::new(&text, &url);
+            self.documents.0.insert(url, doc_data);
         } else {
             error!("failed to extract changes of document {:?}!", url);
         }
     }
 
-    async fn did_open(&mut self, params: DidOpenTextDocumentParams) {}
+    async fn did_open(&mut self, params: DidOpenTextDocumentParams) {
+        let url = params.text_document.uri;
+        let text = params.text_document.text;
+        let doc_data = DocumentData::new(&text, &url);
+        self.documents.0.insert(url, doc_data);
+    }
 
-    async fn did_save(&mut self, params: DidSaveTextDocumentParams) {}
+    async fn did_save(&mut self, params: DidSaveTextDocumentParams) {
+        let url = params.text_document.uri;
+        if let Some(DocumentData::Parsed {
+            csttext,
+            environment,
+        }) = self.documents.0.get(&url)
+        {
+            info!("{:?}", environment);
+        }
+    }
 
     async fn goto_definition(
         &mut self,
@@ -145,7 +161,7 @@ impl Inner {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        todo!()
+        Ok(None)
     }
 
     async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {

@@ -1,11 +1,26 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use itertools::Itertools;
 use lspower::lsp::Url;
-use satysfi_parser::{CstText, LineCol, Rule, Span};
+use satysfi_parser::{Cst, CstText, LineCol, Rule, Span};
 
 /// オンメモリで取り扱うデータをまとめたデータ構造。
 #[derive(Debug, Default)]
-pub struct DocumentCache(HashMap<Url, DocumentData>);
+pub struct DocumentCache(pub HashMap<Url, DocumentData>);
+
+impl DocumentCache {
+    /// dependencies の中のパッケージについてパースし、 Environment 情報の登録を行う。
+    /// この操作は再帰的に行う。
+    pub fn register_dependencies_recursive(&mut self, deps: &[Dependency]) {
+        todo!()
+    }
+
+    /// dependencies の中のパッケージについてパースし、 Environment 情報の登録を行う。
+    /// 既に同一の Url があればスキップする。
+    pub fn register_dependency(&mut self, dep: &Dependency) {
+        todo!()
+    }
+}
 
 /// 一つのファイルに関するデータを纏めたデータ構造。
 #[derive(Debug)]
@@ -58,23 +73,45 @@ pub struct Environment {
     pub dependencies: Vec<Dependency>,
     pub modules: Vec<Module>,
     /// package にて定義された変数。
-    pub variables: Vec<Variable>,
+    pub variables: Vec<PackageComponent<Variable>>,
     /// package にて定義された型。
-    pub types: Vec<CustomType>,
+    pub types: Vec<PackageComponent<CustomType>>,
     /// package にて定義されたヴァリアント。
-    pub variants: Vec<Variant>,
+    pub variants: Vec<PackageComponent<Variant>>,
     /// package にて定義されたインラインコマンド。
-    pub inline_cmds: Vec<InlineCmd>,
+    pub inline_cmds: Vec<PackageComponent<InlineCmd>>,
     /// package にて定義されたブロックコマンド。
-    pub block_cmds: Vec<BlockCmd>,
+    pub block_cmds: Vec<PackageComponent<BlockCmd>>,
     /// package にて定義された数式コマンド。
-    pub math_cmds: Vec<MathCmd>,
+    pub math_cmds: Vec<PackageComponent<MathCmd>>,
 }
 
 impl Environment {
     fn new(csttext: &CstText, url: &Url) -> Environment {
         let dependencies = Dependency::extract(csttext, url);
-        todo!()
+        // let modules = Module::extract(csttext);
+        let modules = vec![];
+        // let types = CustomType::extract_from_package(csttext);
+        let types = vec![];
+        // let variants = Variant::extract_from_package(csttext);
+        let variants = vec![];
+        let variables = Variable::extract_from_package(csttext);
+        // let inline_cmds = InlineCmd::extract_from_package(csttext);
+        // let block_cmds = BlockCmd::extract_from_package(csttext);
+        // let math_cmds = MathCmd::extract_from_package(csttext);
+        let inline_cmds = vec![];
+        let block_cmds = vec![];
+        let math_cmds = vec![];
+        Environment {
+            dependencies,
+            modules,
+            types,
+            variants,
+            variables,
+            inline_cmds,
+            block_cmds,
+            math_cmds,
+        }
     }
 }
 
@@ -174,15 +211,21 @@ pub struct Module {
     /// module にて定義された変数。
     pub variables: Vec<Variable>,
     /// module にて定義された型。
-    pub types: Vec<CustomType>,
+    pub types: Vec<ModuleComponent<CustomType>>,
     /// module にて定義されたヴァリアント。
-    pub variants: Vec<Variant>,
+    pub variants: Vec<ModuleComponent<Variant>>,
     /// module にて定義されたインラインコマンド。
-    pub inline_cmds: Vec<InlineCmd>,
+    pub inline_cmds: Vec<ModuleComponent<InlineCmd>>,
     /// module にて定義されたブロックコマンド。
-    pub block_cmds: Vec<BlockCmd>,
+    pub block_cmds: Vec<ModuleComponent<BlockCmd>>,
     /// module にて定義された数式コマンド。
-    pub math_cmds: Vec<MathCmd>,
+    pub math_cmds: Vec<ModuleComponent<MathCmd>>,
+}
+
+impl Module {
+    fn extract(csttext: &CstText) -> Vec<Module> {
+        todo!()
+    }
 }
 
 /// package 内で定義された変数やコマンドなど。
@@ -197,6 +240,155 @@ pub struct PackageComponent<T> {
     pub scope: Span,
     /// 定義がどこにあるか (position)。
     pub pos_definition: usize,
+}
+
+impl CustomType {
+    /// パッケージの CST + Text を与えて、パッケージ内にある型定義を羅列する。
+    fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<CustomType>> {
+        let csts_type_stmt = csttext
+            .cst
+            .pickup(Rule::type_stmt)
+            .into_iter()
+            .filter(|&cst| {
+                if let Some(parent) = CustomType::find_parent(cst) {
+                    parent != Rule::module_stmt
+                } else {
+                    false
+                }
+            })
+            .map(|cst| CustomType::new(csttext, cst));
+        todo!()
+    }
+
+    /// その変数定義 (type_stmt) の親が
+    /// - Rule::preamble
+    /// - Rule::module_stmt
+    /// のいずれであるか判定する。
+    fn find_parent(cst: &Cst) -> Option<Rule> {
+        let start_pos = cst.span.start;
+        for parent in cst.dig(start_pos) {
+            let rule = match parent.rule {
+                // モジュール内定義であることが確定
+                Rule::module_stmt => Rule::module_stmt,
+                // preamble での定義であることが確定
+                Rule::preamble => Rule::preamble,
+                _ => continue,
+            };
+            return Some(rule);
+        }
+        None
+    }
+
+    /// パッケージの CstText + その中のモジュールの Cst を与えて、
+    /// モジュール内にある型定義を羅列する。
+    fn extract_from_module(csttext: &CstText, cst: &Cst) -> Vec<ModuleComponent<CustomType>> {
+        todo!()
+    }
+
+    fn new(csttext: &CstText, cst: &Cst) -> CustomType {
+        todo!()
+    }
+}
+
+impl Variable {
+    /// パッケージの CST + Text を与えて、パッケージ内にある変数定義を羅列する。
+    fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<Variable>> {
+        // TODO: let 式で直接定義される変数だけでなく、 argument も含めるようにする
+        csttext
+            .cst
+            .pickup(Rule::let_stmt)
+            .into_iter()
+            .filter(|&cst| {
+                if let Some(parent) = Variable::find_parent(csttext, cst) {
+                    parent != Rule::module_stmt
+                } else {
+                    false
+                }
+            })
+            .map(|cst| Variable::new_package_variable(csttext, cst))
+            .concat()
+    }
+
+    /// パッケージの CST + Text 及び
+    /// 対象となる let_stmt の CST を与えて、
+    /// パッケージ内にある変数定義を羅列する。
+    fn new_package_variable(
+        csttext: &CstText,
+        cst_let_stmt: &Cst,
+    ) -> Vec<PackageComponent<Variable>> {
+        let visibility = match Variable::find_parent(csttext, cst_let_stmt) {
+            Some(Rule::bind_stmt) => PackageVisibility::Binded,
+            Some(Rule::preamble) => PackageVisibility::Public,
+            _ => unreachable!(),
+        };
+        let bodies = Variable::new(csttext, cst_let_stmt);
+        let pos_definition = cst_let_stmt.inner[0].span.start;
+        let scope = {
+            let start = cst_let_stmt.span.end;
+            let end = if visibility == PackageVisibility::Binded {
+                // let 式で束縛された変数は、その let 式の bind が終了すれば無効となる
+                if let Some(parent) = csttext.cst.get_parent(cst_let_stmt) {
+                    // parent は let 式の bind がかかった expr
+                    parent.span.end
+                } else {
+                    // 見つからなかったのでスコープを短めにする
+                    cst_let_stmt.span.end
+                }
+            } else {
+                // public な変数はそのファイルが終了するまで有効
+                csttext.cst.span.end
+            };
+            Span { start, end }
+        };
+        bodies
+            .into_iter()
+            .map(|body| PackageComponent {
+                visibility,
+                body,
+                pos_definition,
+                scope,
+            })
+            .collect()
+    }
+
+    /// cst_let_stmt で定義される変数の列を返す。
+    /// let_stmt では複数の変数が一気に登録される可能性があるため。
+    fn new(csttext: &CstText, cst_let_stmt: &Cst) -> Vec<Variable> {
+        let pattern = &cst_let_stmt.inner[0];
+        let vars = pattern.pickup(Rule::var);
+        vars.into_iter()
+            .map(|cst| {
+                let name = csttext.get_text(cst).to_owned();
+                Variable {
+                    name,
+                    type_: None,
+                    type_declaration: None,
+                }
+            })
+            .collect()
+    }
+
+    /// その変数定義 (let_stmt) の親が
+    /// - Rule::preamble
+    /// - Rule::module_stmt
+    /// - Rule::bind_stmt
+    /// のいずれであるか判定する。
+    fn find_parent(csttext: &CstText, cst: &Cst) -> Option<Rule> {
+        let start_pos = cst.span.start;
+        for parent in csttext.cst.dig(start_pos) {
+            let rule = match parent.rule {
+                // 式中の bind であることが確定
+                Rule::bind_stmt => Rule::bind_stmt,
+                // モジュール内定義であることが確定
+                Rule::module_stmt => Rule::module_stmt,
+                // preamble での定義であることが確定
+                Rule::preamble => Rule::preamble,
+                _ => continue,
+            };
+            return Some(rule);
+        }
+        None
+    }
 }
 
 /// module 内で定義された変数やコマンドなど。
@@ -218,60 +410,60 @@ pub struct ModuleComponent<T> {
 #[derive(Debug)]
 pub struct Variable {
     /// 変数名。
-    name: String,
+    pub name: String,
     /// 変数の型（既知の場合）。
-    type_: Option<String>,
+    pub type_: Option<String>,
     /// let 式に型情報を書いている場合、その場所。
-    type_declaration: Option<Span>,
+    pub type_declaration: Option<Span>,
 }
 
 #[derive(Debug)]
 pub struct CustomType {
     /// 型名。
-    name: String,
+    pub name: String,
     /// 型の定義。
-    definition: String,
+    pub definition: String,
 }
 
 #[derive(Debug)]
 pub struct Variant {
     /// variant 名。
-    name: String,
+    pub name: String,
     /// その Variant を持つ型の名前。
-    type_name: String,
+    pub type_name: String,
 }
 
 #[derive(Debug)]
 pub struct InlineCmd {
     /// コマンド名。
-    name: String,
+    pub name: String,
     /// 型情報。
-    type_: Option<Vec<String>>,
+    pub type_: Option<Vec<String>>,
     /// 型情報の載っている場所。
-    type_declaration: Option<Span>,
+    pub type_declaration: Option<Span>,
 }
 
 #[derive(Debug)]
 pub struct BlockCmd {
     /// コマンド名。
-    name: String,
+    pub name: String,
     /// 型情報。
-    type_: Option<Vec<String>>,
+    pub type_: Option<Vec<String>>,
     /// 型情報の載っている場所。
-    type_declaration: Option<Span>,
+    pub type_declaration: Option<Span>,
 }
 
 #[derive(Debug)]
 pub struct MathCmd {
     /// コマンド名。
-    name: String,
+    pub name: String,
     /// 型情報。
-    type_: Option<Vec<String>>,
+    pub type_: Option<Vec<String>>,
     /// 型情報の載っている場所。
-    type_declaration: Option<Span>,
+    pub type_declaration: Option<Span>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageVisibility {
     /// let_stmt などで定義された値。そのpackageを追加すると使用できる類のもの。
     Public,
@@ -279,7 +471,7 @@ pub enum PackageVisibility {
     Binded,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleVisibility {
     /// sig にて direct に宣言されたもの。 Module. が無くとも使うことができる。
     Direct,
