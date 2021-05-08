@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
+use log::info;
 use lspower::lsp::{
     CompletionItem, CompletionList, CompletionResponse, Documentation, InsertTextFormat,
     MarkupContent, MarkupKind, Position, Url,
 };
+use satysfi_parser::Mode;
 use serde::Deserialize;
 
 use crate::documents::DocumentData;
@@ -16,15 +18,32 @@ pub fn get_completion_list(
     url: &Url,
     pos: &Position,
 ) -> Option<CompletionResponse> {
-    let mut items = vec![];
-
-    items.extend(get_variable_list(doc_data, url, pos));
-
-    items.extend(get_primitive_list());
-    Some(CompletionResponse::List(CompletionList {
-        is_incomplete: false,
-        items,
-    }))
+    match doc_data {
+        DocumentData::Parsed { csttext, .. } => {
+            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
+            if pos_usize.is_none() {
+                return None;
+            }
+            let pos_usize = pos_usize.unwrap();
+            if csttext.is_comment(pos_usize) {
+                return None;
+            }
+            let mode = csttext.cst.mode(pos_usize);
+            match mode {
+                Mode::Program => {
+                    let mut items = vec![];
+                    items.extend(get_variable_list(doc_data, url, pos));
+                    items.extend(get_primitive_list());
+                    Some(CompletionResponse::List(CompletionList {
+                        is_incomplete: false,
+                        items,
+                    }))
+                }
+                _ => None,
+            }
+        }
+        DocumentData::NotParsed { .. } => None,
+    }
 }
 
 pub fn get_variable_list(
