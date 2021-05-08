@@ -27,3 +27,24 @@ This repository is work-in-progress yet.
 |`hover`          |Hover on a public function in a module                     |    |
 |`rename`         |Rename a variable name                                     |    |
 |`typeHint`       |Type hints after a command                                 |    |
+
+## How to setup
+
+At the moment, we are only using
+[coc.nvim](https://github.com/neoclide/coc.nvim) on [Neovim](https://github.com/neovim/neovim)
+to check the operation.
+
+In `coc-settings.json`:
+
+```json
+{
+    "languageserver": {
+        "satysfi-ls": {
+            "command": "/path/to/satysfi-language-server/target/debug/satysfi-language-server",
+            "args": ["-w"],
+            "filetypes": ["satysfi"],
+            "trace.server": "verbose"
+        }
+    }
+}
+```
