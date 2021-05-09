@@ -39,6 +39,13 @@ pub fn get_completion_list(
                         items,
                     }))
                 }
+                Mode::Horizontal => {
+                    let items = get_inline_cmd_list(doc_data, url, pos);
+                    Some(CompletionResponse::List(CompletionList {
+                        is_incomplete: false,
+                        items,
+                    }))
+                }
                 _ => None,
             }
         }
@@ -67,6 +74,37 @@ pub fn get_variable_list(
                     .filter(|var| var.scope.includes(pos_usize))
                     .map(|var| {
                         CompletionItem::new_simple(var.body.name.clone(), "in this file".to_owned())
+                    })
+                    .collect()
+            } else {
+                vec![]
+            }
+        }
+        DocumentData::NotParsed { .. } => vec![],
+    }
+}
+
+pub fn get_inline_cmd_list(
+    doc_data: &DocumentData,
+    url: &Url,
+    pos: &Position,
+) -> Vec<CompletionItem> {
+    match doc_data {
+        DocumentData::Parsed {
+            csttext,
+            environment,
+        } => {
+            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
+            if let Some(pos_usize) =
+                csttext.from_line_col(pos.line as usize, pos.character as usize)
+            {
+                // TODO: 依存パッケージを遡って検索
+                environment
+                    .inline_cmds
+                    .iter()
+                    .filter(|cmd| cmd.scope.includes(pos_usize))
+                    .map(|cmd| {
+                        CompletionItem::new_simple(cmd.body.name.clone(), "in this file".to_owned())
                     })
                     .collect()
             } else {

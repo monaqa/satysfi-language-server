@@ -96,10 +96,9 @@ impl Environment {
         // let variants = Variant::extract_from_package(csttext);
         let variants = vec![];
         let variables = Variable::extract_from_package(csttext);
-        // let inline_cmds = InlineCmd::extract_from_package(csttext);
+        let inline_cmds = InlineCmd::extract_from_package(csttext);
         // let block_cmds = BlockCmd::extract_from_package(csttext);
         // let math_cmds = MathCmd::extract_from_package(csttext);
-        let inline_cmds = vec![];
         let block_cmds = vec![];
         let math_cmds = vec![];
         Environment {
@@ -242,6 +241,138 @@ pub struct PackageComponent<T> {
     pub pos_definition: usize,
 }
 
+/// module 内で定義された変数やコマンドなど。
+#[derive(Debug)]
+pub struct ModuleComponent<T> {
+    /// 可視性。外から見えるかどうか。
+    pub visibility: ModuleVisibility,
+    /// 本体。
+    pub body: T,
+    /// スコープ。すなわち、対象となるファイルの中で、
+    /// その変数や型、コマンドなどを使うことができる領域。
+    pub scope: Span,
+    /// sig 内部で declaration しているとき、その declaration がどこにあるか (position)。
+    pub pos_declaration: Option<usize>,
+    /// 定義がどこにあるか (position)。
+    pub pos_definition: usize,
+}
+
+#[derive(Debug)]
+pub struct Variable {
+    /// 変数名。
+    pub name: String,
+    /// 変数の型（既知の場合）。
+    pub type_: Option<String>,
+    /// let 式に型情報を書いている場合、その場所。
+    pub type_declaration: Option<Span>,
+}
+
+impl Variable {
+    /// パッケージの CST + Text を与えて、パッケージ内にある変数定義を羅列する。
+    fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<Variable>> {
+        // TODO: let 式で直接定義される変数だけでなく、 argument も含めるようにする
+        csttext
+            .cst
+            .pickup(Rule::let_stmt)
+            .into_iter()
+            .filter(|&cst| {
+                if let Some(parent) = Variable::find_parent(csttext, cst) {
+                    parent != Rule::module_stmt
+                } else {
+                    false
+                }
+            })
+            .map(|cst| Variable::new_package_variable(csttext, cst))
+            .concat()
+    }
+
+    /// パッケージの CST + Text 及び
+    /// 対象となる let_stmt の CST を与えて、
+    /// パッケージ内にある変数定義を羅列する。
+    fn new_package_variable(csttext: &CstText, cst_stmt: &Cst) -> Vec<PackageComponent<Variable>> {
+        let visibility = match Variable::find_parent(csttext, cst_stmt) {
+            Some(Rule::bind_stmt) => PackageVisibility::Binded,
+            Some(Rule::preamble) => PackageVisibility::Public,
+            _ => unreachable!(),
+        };
+        let bodies = Variable::new(csttext, cst_stmt);
+        let pos_definition = cst_stmt.inner[0].span.start;
+        let scope = {
+            let start = cst_stmt.span.end;
+            let end = if visibility == PackageVisibility::Binded {
+                // let 式で束縛された変数は、その let 式の bind が終了すれば無効となる
+                if let Some(parent) = csttext.cst.get_parent(cst_stmt) {
+                    // parent は let 式の bind がかかった expr
+                    parent.span.end
+                } else {
+                    // 見つからなかったのでスコープを短めにする
+                    cst_stmt.span.end
+                }
+            } else {
+                // public な変数はそのファイルが終了するまで有効
+                csttext.cst.span.end
+            };
+            Span { start, end }
+        };
+        bodies
+            .into_iter()
+            .map(|body| PackageComponent {
+                visibility,
+                body,
+                pos_definition,
+                scope,
+            })
+            .collect()
+    }
+
+    /// cst_stmt で定義される変数の列を返す。
+    /// let_stmt では複数の変数が一気に登録される可能性があるため。
+    fn new(csttext: &CstText, cst_stmt: &Cst) -> Vec<Variable> {
+        let pattern = &cst_stmt.inner[0];
+        let vars = pattern.pickup(Rule::var);
+        vars.into_iter()
+            .map(|cst| {
+                let name = csttext.get_text(cst).to_owned();
+                Variable {
+                    name,
+                    type_: None,
+                    type_declaration: None,
+                }
+            })
+            .collect()
+    }
+
+    /// その変数定義 (let_stmt) の親が
+    /// - Rule::preamble
+    /// - Rule::module_stmt
+    /// - Rule::bind_stmt
+    /// のいずれであるか判定する。
+    fn find_parent(csttext: &CstText, cst: &Cst) -> Option<Rule> {
+        let start_pos = cst.span.start;
+        for parent in csttext.cst.dig(start_pos) {
+            let rule = match parent.rule {
+                // 式中の bind であることが確定
+                Rule::bind_stmt => Rule::bind_stmt,
+                // モジュール内定義であることが確定
+                Rule::module_stmt => Rule::module_stmt,
+                // preamble での定義であることが確定
+                Rule::preamble => Rule::preamble,
+                _ => continue,
+            };
+            return Some(rule);
+        }
+        None
+    }
+}
+
+#[derive(Debug)]
+pub struct CustomType {
+    /// 型名。
+    pub name: String,
+    /// 型の定義。
+    pub definition: String,
+}
+
 impl CustomType {
     /// パッケージの CST + Text を与えて、パッケージ内にある型定義を羅列する。
     fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<CustomType>> {
@@ -290,141 +421,6 @@ impl CustomType {
     }
 }
 
-impl Variable {
-    /// パッケージの CST + Text を与えて、パッケージ内にある変数定義を羅列する。
-    fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<Variable>> {
-        // TODO: let 式で直接定義される変数だけでなく、 argument も含めるようにする
-        csttext
-            .cst
-            .pickup(Rule::let_stmt)
-            .into_iter()
-            .filter(|&cst| {
-                if let Some(parent) = Variable::find_parent(csttext, cst) {
-                    parent != Rule::module_stmt
-                } else {
-                    false
-                }
-            })
-            .map(|cst| Variable::new_package_variable(csttext, cst))
-            .concat()
-    }
-
-    /// パッケージの CST + Text 及び
-    /// 対象となる let_stmt の CST を与えて、
-    /// パッケージ内にある変数定義を羅列する。
-    fn new_package_variable(
-        csttext: &CstText,
-        cst_let_stmt: &Cst,
-    ) -> Vec<PackageComponent<Variable>> {
-        let visibility = match Variable::find_parent(csttext, cst_let_stmt) {
-            Some(Rule::bind_stmt) => PackageVisibility::Binded,
-            Some(Rule::preamble) => PackageVisibility::Public,
-            _ => unreachable!(),
-        };
-        let bodies = Variable::new(csttext, cst_let_stmt);
-        let pos_definition = cst_let_stmt.inner[0].span.start;
-        let scope = {
-            let start = cst_let_stmt.span.end;
-            let end = if visibility == PackageVisibility::Binded {
-                // let 式で束縛された変数は、その let 式の bind が終了すれば無効となる
-                if let Some(parent) = csttext.cst.get_parent(cst_let_stmt) {
-                    // parent は let 式の bind がかかった expr
-                    parent.span.end
-                } else {
-                    // 見つからなかったのでスコープを短めにする
-                    cst_let_stmt.span.end
-                }
-            } else {
-                // public な変数はそのファイルが終了するまで有効
-                csttext.cst.span.end
-            };
-            Span { start, end }
-        };
-        bodies
-            .into_iter()
-            .map(|body| PackageComponent {
-                visibility,
-                body,
-                pos_definition,
-                scope,
-            })
-            .collect()
-    }
-
-    /// cst_let_stmt で定義される変数の列を返す。
-    /// let_stmt では複数の変数が一気に登録される可能性があるため。
-    fn new(csttext: &CstText, cst_let_stmt: &Cst) -> Vec<Variable> {
-        let pattern = &cst_let_stmt.inner[0];
-        let vars = pattern.pickup(Rule::var);
-        vars.into_iter()
-            .map(|cst| {
-                let name = csttext.get_text(cst).to_owned();
-                Variable {
-                    name,
-                    type_: None,
-                    type_declaration: None,
-                }
-            })
-            .collect()
-    }
-
-    /// その変数定義 (let_stmt) の親が
-    /// - Rule::preamble
-    /// - Rule::module_stmt
-    /// - Rule::bind_stmt
-    /// のいずれであるか判定する。
-    fn find_parent(csttext: &CstText, cst: &Cst) -> Option<Rule> {
-        let start_pos = cst.span.start;
-        for parent in csttext.cst.dig(start_pos) {
-            let rule = match parent.rule {
-                // 式中の bind であることが確定
-                Rule::bind_stmt => Rule::bind_stmt,
-                // モジュール内定義であることが確定
-                Rule::module_stmt => Rule::module_stmt,
-                // preamble での定義であることが確定
-                Rule::preamble => Rule::preamble,
-                _ => continue,
-            };
-            return Some(rule);
-        }
-        None
-    }
-}
-
-/// module 内で定義された変数やコマンドなど。
-#[derive(Debug)]
-pub struct ModuleComponent<T> {
-    /// 可視性。外から見えるかどうか。
-    pub visibility: ModuleVisibility,
-    /// 本体。
-    pub body: T,
-    /// スコープ。すなわち、対象となるファイルの中で、
-    /// その変数や型、コマンドなどを使うことができる領域。
-    pub scope: Span,
-    /// sig 内部で declaration しているとき、その declaration がどこにあるか (position)。
-    pub pos_declaration: Option<usize>,
-    /// 定義がどこにあるか (position)。
-    pub pos_definition: usize,
-}
-
-#[derive(Debug)]
-pub struct Variable {
-    /// 変数名。
-    pub name: String,
-    /// 変数の型（既知の場合）。
-    pub type_: Option<String>,
-    /// let 式に型情報を書いている場合、その場所。
-    pub type_declaration: Option<Span>,
-}
-
-#[derive(Debug)]
-pub struct CustomType {
-    /// 型名。
-    pub name: String,
-    /// 型の定義。
-    pub definition: String,
-}
-
 #[derive(Debug)]
 pub struct Variant {
     /// variant 名。
@@ -441,6 +437,76 @@ pub struct InlineCmd {
     pub type_: Option<Vec<String>>,
     /// 型情報の載っている場所。
     pub type_declaration: Option<Span>,
+}
+
+impl InlineCmd {
+    /// パッケージの CST + Text を与えて、パッケージ内にある変数定義を羅列する。
+    fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<InlineCmd>> {
+        let cst_stmt_ctx = csttext.cst.pickup(Rule::let_inline_stmt_ctx);
+        let cst_stmt_noctx = csttext.cst.pickup(Rule::let_inline_stmt_noctx);
+        cst_stmt_ctx
+            .into_iter()
+            .chain(cst_stmt_noctx)
+            .filter(|&cst| {
+                if let Some(parent) = InlineCmd::find_parent(csttext, cst) {
+                    parent != Rule::module_stmt
+                } else {
+                    false
+                }
+            })
+            .map(|cst| InlineCmd::new_package_variable(csttext, cst))
+            .collect()
+    }
+
+    /// パッケージの CST + Text 及び
+    /// 対象となる let_stmt の CST を与えて、
+    /// パッケージ内にある変数定義を羅列する。
+    fn new_package_variable(csttext: &CstText, cst_stmt: &Cst) -> PackageComponent<InlineCmd> {
+        let visibility = PackageVisibility::Public;
+        let body = InlineCmd::new(csttext, cst_stmt);
+        let scope = {
+            let start = cst_stmt.span.end;
+            let end = csttext.cst.span.end;
+            Span { start, end }
+        };
+        let pos_definition = match cst_stmt.rule {
+            Rule::let_inline_stmt_noctx => &cst_stmt.inner[0],
+            Rule::let_inline_stmt_ctx => &cst_stmt.inner[1],
+            _ => unreachable!(),
+        }
+        .span
+        .start;
+        PackageComponent {
+            visibility,
+            body,
+            pos_definition,
+            scope,
+        }
+    }
+
+    /// cst_stmt で定義されるコマンドを返す。
+    fn new(csttext: &CstText, cst_stmt: &Cst) -> InlineCmd {
+        let cst_cmd_name = match cst_stmt.rule {
+            Rule::let_inline_stmt_noctx => &cst_stmt.inner[0],
+            Rule::let_inline_stmt_ctx => &cst_stmt.inner[1],
+            _ => unreachable!(),
+        };
+        let name = csttext.get_text(cst_cmd_name).to_owned();
+        InlineCmd {
+            name,
+            type_: None,
+            type_declaration: None,
+        }
+    }
+
+    /// その変数定義 (let_stmt) の親が
+    /// - Rule::preamble
+    /// - Rule::module_stmt
+    /// - Rule::bind_stmt
+    /// のいずれであるか判定する。
+    fn find_parent(csttext: &CstText, cst: &Cst) -> Option<Rule> {
+        csttext.cst.get_parent(cst).map(|cst| cst.rule)
+    }
 }
 
 #[derive(Debug)]
