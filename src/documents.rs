@@ -97,10 +97,9 @@ impl Environment {
         let variants = vec![];
         let variables = Variable::extract_from_package(csttext);
         let inline_cmds = InlineCmd::extract_from_package(csttext);
-        // let block_cmds = BlockCmd::extract_from_package(csttext);
-        // let math_cmds = MathCmd::extract_from_package(csttext);
-        let block_cmds = vec![];
+        let block_cmds = BlockCmd::extract_from_package(csttext);
         let math_cmds = vec![];
+        // let math_cmds = MathCmd::extract_from_package(csttext);
         Environment {
             dependencies,
             modules,
@@ -517,6 +516,76 @@ pub struct BlockCmd {
     pub type_: Option<Vec<String>>,
     /// 型情報の載っている場所。
     pub type_declaration: Option<Span>,
+}
+
+impl BlockCmd {
+    /// パッケージの CST + Text を与えて、パッケージ内にある変数定義を羅列する。
+    fn extract_from_package(csttext: &CstText) -> Vec<PackageComponent<BlockCmd>> {
+        let cst_stmt_ctx = csttext.cst.pickup(Rule::let_block_stmt_ctx);
+        let cst_stmt_noctx = csttext.cst.pickup(Rule::let_block_stmt_noctx);
+        cst_stmt_ctx
+            .into_iter()
+            .chain(cst_stmt_noctx)
+            .filter(|&cst| {
+                if let Some(parent) = BlockCmd::find_parent(csttext, cst) {
+                    parent != Rule::module_stmt
+                } else {
+                    false
+                }
+            })
+            .map(|cst| BlockCmd::new_package_variable(csttext, cst))
+            .collect()
+    }
+
+    /// パッケージの CST + Text 及び
+    /// 対象となる let_stmt の CST を与えて、
+    /// パッケージ内にある変数定義を羅列する。
+    fn new_package_variable(csttext: &CstText, cst_stmt: &Cst) -> PackageComponent<BlockCmd> {
+        let visibility = PackageVisibility::Public;
+        let body = BlockCmd::new(csttext, cst_stmt);
+        let scope = {
+            let start = cst_stmt.span.end;
+            let end = csttext.cst.span.end;
+            Span { start, end }
+        };
+        let pos_definition = match cst_stmt.rule {
+            Rule::let_block_stmt_noctx => &cst_stmt.inner[0],
+            Rule::let_block_stmt_ctx => &cst_stmt.inner[1],
+            _ => unreachable!(),
+        }
+        .span
+        .start;
+        PackageComponent {
+            visibility,
+            body,
+            pos_definition,
+            scope,
+        }
+    }
+
+    /// cst_stmt で定義されるコマンドを返す。
+    fn new(csttext: &CstText, cst_stmt: &Cst) -> BlockCmd {
+        let cst_cmd_name = match cst_stmt.rule {
+            Rule::let_block_stmt_noctx => &cst_stmt.inner[0],
+            Rule::let_block_stmt_ctx => &cst_stmt.inner[1],
+            _ => unreachable!(),
+        };
+        let name = csttext.get_text(cst_cmd_name).to_owned();
+        BlockCmd {
+            name,
+            type_: None,
+            type_declaration: None,
+        }
+    }
+
+    /// その変数定義 (let_stmt) の親が
+    /// - Rule::preamble
+    /// - Rule::module_stmt
+    /// - Rule::bind_stmt
+    /// のいずれであるか判定する。
+    fn find_parent(csttext: &CstText, cst: &Cst) -> Option<Rule> {
+        csttext.cst.get_parent(cst).map(|cst| cst.rule)
+    }
 }
 
 #[derive(Debug)]

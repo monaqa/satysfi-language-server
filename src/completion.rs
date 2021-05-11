@@ -29,6 +29,7 @@ pub fn get_completion_list(
                 return None;
             }
             let mode = csttext.cst.mode(pos_usize);
+            info!("{:?}", mode);
             match mode {
                 Mode::Program => {
                     let mut items = vec![];
@@ -41,6 +42,13 @@ pub fn get_completion_list(
                 }
                 Mode::Horizontal => {
                     let items = get_inline_cmd_list(doc_data, url, pos);
+                    Some(CompletionResponse::List(CompletionList {
+                        is_incomplete: false,
+                        items,
+                    }))
+                }
+                Mode::Vertical => {
+                    let items = get_block_cmd_list(doc_data, url, pos);
                     Some(CompletionResponse::List(CompletionList {
                         is_incomplete: false,
                         items,
@@ -101,6 +109,37 @@ pub fn get_inline_cmd_list(
                 // TODO: 依存パッケージを遡って検索
                 environment
                     .inline_cmds
+                    .iter()
+                    .filter(|cmd| cmd.scope.includes(pos_usize))
+                    .map(|cmd| {
+                        CompletionItem::new_simple(cmd.body.name.clone(), "in this file".to_owned())
+                    })
+                    .collect()
+            } else {
+                vec![]
+            }
+        }
+        DocumentData::NotParsed { .. } => vec![],
+    }
+}
+
+pub fn get_block_cmd_list(
+    doc_data: &DocumentData,
+    url: &Url,
+    pos: &Position,
+) -> Vec<CompletionItem> {
+    match doc_data {
+        DocumentData::Parsed {
+            csttext,
+            environment,
+        } => {
+            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
+            if let Some(pos_usize) =
+                csttext.from_line_col(pos.line as usize, pos.character as usize)
+            {
+                // TODO: 依存パッケージを遡って検索
+                environment
+                    .block_cmds
                     .iter()
                     .filter(|cmd| cmd.scope.includes(pos_usize))
                     .map(|cmd| {
