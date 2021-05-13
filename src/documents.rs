@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use itertools::Itertools;
+use log::info;
 use lspower::lsp::Url;
 use satysfi_parser::{Cst, CstText, LineCol, Rule, Span};
 
@@ -71,7 +72,7 @@ impl DocumentData {
 #[derive(Debug, Default)]
 pub struct Environment {
     pub dependencies: Vec<Dependency>,
-    pub modules: Vec<Module>,
+    pub modules: Vec<PackageComponent<Module>>,
     /// package にて定義された変数。
     pub variables: Vec<PackageComponent<Variable>>,
     /// package にて定義された型。
@@ -88,12 +89,11 @@ pub struct Environment {
 
 impl Environment {
     fn new(csttext: &CstText, url: &Url) -> Environment {
-        let modules = vec![];
         let types = vec![];
         let variants = vec![];
         let math_cmds = vec![];
         let dependencies = Dependency::extract(csttext, url);
-        // let modules = Module::extract(csttext);
+        let modules = Module::extract(csttext);
         // let types = CustomType::extract_from_package(csttext);
         // let variants = Variant::extract_from_package(csttext);
         let variables = Variable::extract_from_package(csttext);
@@ -207,7 +207,7 @@ pub struct Module {
     /// Module の名前。
     pub name: String,
     /// module にて定義された変数。
-    pub variables: Vec<Variable>,
+    pub variables: Vec<ModuleComponent<Variable>>,
     /// module にて定義された型。
     pub types: Vec<ModuleComponent<CustomType>>,
     /// module にて定義されたヴァリアント。
@@ -227,8 +227,9 @@ impl Module {
             .pickup(Rule::module_stmt)
             .into_iter()
             .filter(|&cst| {
-                if let Some(parent) = Variable::find_parent(csttext, cst) {
-                    parent != Rule::module_stmt
+                if let Some(parent) = csttext.cst.get_parent(cst) {
+                    // module 内 module ではない
+                    parent.rule != Rule::module_stmt
                 } else {
                     false
                 }
@@ -246,6 +247,7 @@ impl Module {
             Span { start, end }
         };
         let pos_definition = cst_stmt.inner[0].span.start;
+        info!("registering new package modules...");
         PackageComponent {
             visibility,
             body,
@@ -254,19 +256,18 @@ impl Module {
         }
     }
 
-    fn new(csttext: &CstText, cst_stmt: &Cst) -> Module {
-        let cst_module_name = &cst_stmt.inner[0];
+    fn new(csttext: &CstText, cst_module: &Cst) -> Module {
+        let cst_module_name = &cst_module.inner[0];
         let name = csttext.get_text(&cst_module_name).to_owned();
 
         let types = vec![];
         let variants = vec![];
-        let variables = vec![];
         let inline_cmds = vec![];
         let block_cmds = vec![];
         let math_cmds = vec![];
         // let types = CustomType::extract_from_module(csttext);
         // let variants = Variant::extract_from_module(csttext);
-        // let variables = Variable::extract_from_module(csttext);
+        let variables = Variable::extract_from_module(csttext, cst_module);
         // let inline_cmds = InlineCmd::extract_from_module(csttext);
         // let block_cmds = BlockCmd::extract_from_module(csttext);
         // let math_cmds = MathCmd::extract_from_module(csttext);
@@ -341,6 +342,21 @@ impl Variable {
             .concat()
     }
 
+    /// パッケージの CST + Text を与えて、パッケージ内にある変数定義を羅列する。
+    fn extract_from_module(csttext: &CstText, cst_module: &Cst) -> Vec<ModuleComponent<Variable>> {
+        let val_signatures = cst_module
+            .pickup(Rule::sig_val_stmt)
+            .iter()
+            .map(|cst| &cst.inner[0]) // variable / bin_operator name など
+            .filter(|cst| cst.rule == Rule::var) // bin_operator やコマンド の可能性を弾く
+            .collect_vec();
+        cst_module
+            .pickup(Rule::let_stmt)
+            .into_iter()
+            .map(|cst| Variable::new_module_variable(csttext, cst_module, cst, &val_signatures))
+            .concat()
+    }
+
     /// パッケージの CST + Text 及び
     /// 対象となる let_stmt の CST を与えて、
     /// パッケージ内にある変数定義を羅列する。
@@ -376,6 +392,60 @@ impl Variable {
                 body,
                 pos_definition,
                 scope,
+            })
+            .collect()
+    }
+
+    fn new_module_variable(
+        csttext: &CstText,
+        cst_module: &Cst,
+        cst_stmt: &Cst,
+        val_signatures: &[&Cst],
+    ) -> Vec<ModuleComponent<Variable>> {
+        let bodies = Variable::new(csttext, cst_stmt);
+        let pos_definition = cst_stmt.inner[0].span.start;
+        bodies
+            .into_iter()
+            .map(|body| {
+                let (visibility, pos_declaration) =
+                    match csttext.cst.get_parent(cst_stmt).map(|cst| cst.rule) {
+                        Some(Rule::bind_stmt) => (ModuleVisibility::Binded, None),
+                        Some(Rule::struct_stmt) => val_signatures
+                            .iter()
+                            .find(|cst_signature| {
+                                csttext.get_text(cst_signature) == body.name.as_str()
+                            })
+                            .map(|cst_signature| {
+                                (ModuleVisibility::Public, Some(cst_signature.span.start))
+                            })
+                            .unwrap_or((ModuleVisibility::Private, None)),
+                        // _ => unreachable!(),
+                        _ => (ModuleVisibility::Private, None),
+                    };
+                let scope = {
+                    let start = cst_stmt.span.end;
+                    let end = if visibility == ModuleVisibility::Binded {
+                        // let 式で束縛された変数は、その let 式の bind が終了すれば無効となる
+                        if let Some(parent) = csttext.cst.get_parent(cst_stmt) {
+                            // parent は let 式の bind がかかった expr
+                            parent.span.end
+                        } else {
+                            // 見つからなかったのでスコープを短めにする
+                            cst_stmt.span.end
+                        }
+                    } else {
+                        // module 内変数はその module 定義が終了するまで有効
+                        cst_module.span.end
+                    };
+                    Span { start, end }
+                };
+                ModuleComponent {
+                    visibility,
+                    body,
+                    pos_definition,
+                    pos_declaration,
+                    scope,
+                }
             })
             .collect()
     }
