@@ -88,17 +88,17 @@ pub struct Environment {
 
 impl Environment {
     fn new(csttext: &CstText, url: &Url) -> Environment {
+        let modules = vec![];
+        let types = vec![];
+        let variants = vec![];
+        let math_cmds = vec![];
         let dependencies = Dependency::extract(csttext, url);
         // let modules = Module::extract(csttext);
-        let modules = vec![];
         // let types = CustomType::extract_from_package(csttext);
-        let types = vec![];
         // let variants = Variant::extract_from_package(csttext);
-        let variants = vec![];
         let variables = Variable::extract_from_package(csttext);
         let inline_cmds = InlineCmd::extract_from_package(csttext);
         let block_cmds = BlockCmd::extract_from_package(csttext);
-        let math_cmds = vec![];
         // let math_cmds = MathCmd::extract_from_package(csttext);
         Environment {
             dependencies,
@@ -221,8 +221,64 @@ pub struct Module {
 }
 
 impl Module {
-    fn extract(csttext: &CstText) -> Vec<Module> {
-        todo!()
+    fn extract(csttext: &CstText) -> Vec<PackageComponent<Module>> {
+        csttext
+            .cst
+            .pickup(Rule::module_stmt)
+            .into_iter()
+            .filter(|&cst| {
+                if let Some(parent) = Variable::find_parent(csttext, cst) {
+                    parent != Rule::module_stmt
+                } else {
+                    false
+                }
+            })
+            .map(|cst| Module::new_package_module(csttext, cst))
+            .collect()
+    }
+
+    fn new_package_module(csttext: &CstText, cst_stmt: &Cst) -> PackageComponent<Module> {
+        let visibility = PackageVisibility::Public;
+        let body = Module::new(csttext, cst_stmt);
+        let scope = {
+            let start = cst_stmt.span.end;
+            let end = csttext.cst.span.end;
+            Span { start, end }
+        };
+        let pos_definition = cst_stmt.inner[0].span.start;
+        PackageComponent {
+            visibility,
+            body,
+            pos_definition,
+            scope,
+        }
+    }
+
+    fn new(csttext: &CstText, cst_stmt: &Cst) -> Module {
+        let cst_module_name = &cst_stmt.inner[0];
+        let name = csttext.get_text(&cst_module_name).to_owned();
+
+        let types = vec![];
+        let variants = vec![];
+        let variables = vec![];
+        let inline_cmds = vec![];
+        let block_cmds = vec![];
+        let math_cmds = vec![];
+        // let types = CustomType::extract_from_module(csttext);
+        // let variants = Variant::extract_from_module(csttext);
+        // let variables = Variable::extract_from_module(csttext);
+        // let inline_cmds = InlineCmd::extract_from_module(csttext);
+        // let block_cmds = BlockCmd::extract_from_module(csttext);
+        // let math_cmds = MathCmd::extract_from_module(csttext);
+        Module {
+            name,
+            types,
+            variants,
+            variables,
+            inline_cmds,
+            block_cmds,
+            math_cmds,
+        }
     }
 }
 

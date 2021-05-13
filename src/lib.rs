@@ -14,6 +14,7 @@ mod completion;
 mod config;
 mod diagnostics;
 mod documents;
+mod util;
 
 pub async fn start_language_server() -> Result<()> {
     let stdin = tokio::io::stdin();

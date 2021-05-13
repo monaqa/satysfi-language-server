@@ -9,7 +9,7 @@ use lspower::lsp::{
 use satysfi_parser::Mode;
 use serde::Deserialize;
 
-use crate::documents::DocumentData;
+use crate::{documents::DocumentData, util::ConvertPosition};
 
 pub const COMPLETION_RESOUCES: &str = include_str!("resource/completion_items.toml");
 
@@ -20,11 +20,7 @@ pub fn get_completion_list(
 ) -> Option<CompletionResponse> {
     match doc_data {
         DocumentData::Parsed { csttext, .. } => {
-            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
-            if pos_usize.is_none() {
-                return None;
-            }
-            let pos_usize = pos_usize.unwrap();
+            let pos_usize = csttext.from_position(pos)?;
             if csttext.is_comment(pos_usize) {
                 return None;
             }
@@ -71,10 +67,7 @@ pub fn get_variable_list(
             csttext,
             environment,
         } => {
-            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
-            if let Some(pos_usize) =
-                csttext.from_line_col(pos.line as usize, pos.character as usize)
-            {
+            if let Some(pos_usize) = csttext.from_position(pos) {
                 // TODO: 依存パッケージを遡って検索
                 environment
                     .variables
@@ -102,10 +95,7 @@ pub fn get_inline_cmd_list(
             csttext,
             environment,
         } => {
-            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
-            if let Some(pos_usize) =
-                csttext.from_line_col(pos.line as usize, pos.character as usize)
-            {
+            if let Some(pos_usize) = csttext.from_position(pos) {
                 // TODO: 依存パッケージを遡って検索
                 environment
                     .inline_cmds

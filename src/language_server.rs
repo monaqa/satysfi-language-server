@@ -5,7 +5,7 @@ use lspower::{
         CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, GotoDefinitionParams,
         GotoDefinitionResponse, Hover, HoverContents, HoverParams, InitializeParams,
-        InitializeResult, LanguageString, Location, MarkedString, MarkupContent, ServerInfo,
+        InitializeResult, LanguageString, Location, MarkedString, MarkupContent, Range, ServerInfo,
     },
 };
 use std::{collections::HashSet, sync::Arc};
@@ -15,8 +15,9 @@ use lspower::Client;
 use crate::{
     completion::{get_completion_list, get_primitive_list},
     config::Config,
-    diagnostics::DiagnosticCollection,
+    diagnostics::{get_diagnostics, DiagnosticCollection},
     documents::{DocumentCache, DocumentData},
+    util::ConvertPosition,
 };
 use satysfi_parser::Rule;
 
@@ -130,7 +131,10 @@ impl Inner {
         if let Some(cc) = params.content_changes.into_iter().last() {
             let text = cc.text;
             let doc_data = DocumentData::new(&text, &url);
-            self.documents.0.insert(url, doc_data);
+
+            let diags = get_diagnostics(&doc_data);
+            self.documents.0.insert(url.clone(), doc_data);
+            self.client.publish_diagnostics(url, diags, None).await;
         } else {
             error!("failed to extract changes of document {:?}!", url);
         }
@@ -140,17 +144,22 @@ impl Inner {
         let url = params.text_document.uri;
         let text = params.text_document.text;
         let doc_data = DocumentData::new(&text, &url);
-        self.documents.0.insert(url, doc_data);
+
+        let diags = get_diagnostics(&doc_data);
+        self.documents.0.insert(url.clone(), doc_data);
+        self.client.publish_diagnostics(url, diags, None).await;
     }
 
     async fn did_save(&mut self, params: DidSaveTextDocumentParams) {
         let url = params.text_document.uri;
-        if let Some(DocumentData::Parsed {
-            csttext,
-            environment,
-        }) = self.documents.0.get(&url)
-        {
+        let doc_data = self.documents.0.get(&url);
+        if let Some(DocumentData::Parsed { environment, .. }) = &doc_data {
             info!("{:?}", environment);
+        }
+
+        if let Some(doc_data) = doc_data {
+            let diags = get_diagnostics(&doc_data);
+            self.client.publish_diagnostics(url, diags, None).await;
         }
     }
 
@@ -161,7 +170,56 @@ impl Inner {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        Ok(None)
+        if let Some(DocumentData::Parsed {
+            csttext,
+            environment,
+        }) = self.documents.0.get(&uri)
+        {
+            let pos_usize = csttext.from_position(&pos).unwrap();
+            // カーソル上にある variable や inline-cmd の CST を抽出する
+            let cst = csttext
+                .cst
+                .dig(pos_usize)
+                .into_iter()
+                .find(|&cst| [Rule::var, Rule::inline_cmd_name].contains(&cst.rule));
+            if cst.is_none() {
+                return Ok(None);
+            }
+            // カーソル上にある variable や inline-cmd の CST
+            let cst = cst.unwrap();
+            // 検索したい変数・コマンド名
+            let name = csttext.get_text(cst);
+
+            let pos_definition = match cst.rule {
+                Rule::var => environment
+                    .variables
+                    .iter()
+                    // カーソルがスコープ内にあって、かつ名前の一致するもの
+                    .find(|var| var.scope.includes(pos_usize) && var.body.name == name)
+                    .map(|var| var.pos_definition),
+                Rule::inline_cmd_name => environment
+                    .inline_cmds
+                    .iter()
+                    .find(|var| var.scope.includes(pos_usize) && var.body.name == name)
+                    .map(|var| var.pos_definition),
+                _ => unreachable!(),
+            };
+
+            if pos_definition.is_none() {
+                return Ok(None);
+            }
+            let pos_definition = pos_definition.unwrap();
+            let range = Range {
+                start: csttext.get_position(pos_definition).unwrap(),
+                end: csttext.get_position(pos_definition + 1).unwrap(),
+            };
+            let loc = Location { uri, range };
+            let resp = GotoDefinitionResponse::Scalar(loc);
+
+            Ok(Some(resp))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {
