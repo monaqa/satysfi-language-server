@@ -1,8 +1,9 @@
+use anyhow::{anyhow, Context, Result};
 use std::{collections::HashMap, path::PathBuf};
 
 use itertools::Itertools;
 use log::info;
-use lspower::lsp::Url;
+use lspower::lsp::{Position, Url};
 use satysfi_parser::{Cst, CstText, LineCol, Rule, Span};
 
 /// オンメモリで取り扱うデータをまとめたデータ構造。
@@ -12,14 +13,56 @@ pub struct DocumentCache(pub HashMap<Url, DocumentData>);
 impl DocumentCache {
     /// dependencies の中のパッケージについてパースし、 Environment 情報の登録を行う。
     /// この操作は再帰的に行う。
-    pub fn register_dependencies_recursive(&mut self, deps: &[Dependency]) {
-        todo!()
+    pub fn register_dependencies(&mut self, deps: &[Dependency]) {
+        for dep in deps {
+            if let Some(url) = &dep.url {
+                // 既に登録されている url は一度読んでいるので skip
+                if self.0.get(url).is_none() {
+                    if let Ok(doc_data) = DocumentData::new_from_file(url) {
+                        self.0.insert(url.clone(), doc_data);
+                        // 上で格納したファイルの中に dependencies 情報があればクローンして取り出す
+                        let dependencies = self.0.get(url).and_then(|doc| {
+                            if let DocumentData::Parsed { environment, .. } = doc {
+                                Some(environment.dependencies.clone())
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(dependencies) = dependencies {
+                            self.register_dependencies(&dependencies);
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    /// dependencies の中のパッケージについてパースし、 Environment 情報の登録を行う。
-    /// 既に同一の Url があればスキップする。
-    pub fn register_dependency(&mut self, dep: &Dependency) {
-        todo!()
+    /// environment を表示する。
+    /// for debug
+    pub fn show_envs(&self) {
+        for (k, v) in self.0.iter() {
+            info!("{:?}:", k);
+            if let DocumentData::Parsed { environment, .. } = v {
+                for dep in &environment.dependencies {
+                    info!("Dependency: {:?}", dep.name);
+                }
+                for module in &environment.modules {
+                    info!("Module: {:?}", module.body.name);
+                }
+                for var in &environment.variables {
+                    info!("Varable: {:?}", var.body.name);
+                }
+                for cmd in &environment.inline_cmds {
+                    info!("InlineCmd: {:?}", cmd.body.name);
+                }
+                for cmd in &environment.block_cmds {
+                    info!("BlockCmd: {:?}", cmd.body.name);
+                }
+                for cmd in &environment.math_cmds {
+                    info!("BlockCmd: {:?}", cmd.body.name);
+                }
+            }
+        }
     }
 }
 
@@ -64,6 +107,15 @@ impl DocumentData {
                     expect,
                 }
             }
+        }
+    }
+
+    pub fn new_from_file(url: &Url) -> Result<DocumentData> {
+        if let Ok(fpath) = url.to_file_path() {
+            let text = std::fs::read_to_string(&fpath)?;
+            Ok(DocumentData::new(&text, url))
+        } else {
+            Err(anyhow!("Failed to convert url to file path."))
         }
     }
 }
@@ -113,19 +165,19 @@ impl Environment {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dependency {
     /// パッケージ名。
-    name: String,
+    pub name: String,
     /// require か import か。
-    kind: DependencyKind,
+    pub kind: DependencyKind,
     /// `@require:` や `@import` が呼ばれている場所。
-    definition: Span,
+    pub definition: Span,
     /// 実際のファイルパス。パスを解決できなかったら None を返す。
-    url: Option<Url>,
+    pub url: Option<Url>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum DependencyKind {
     Require,
     Import,
@@ -467,6 +519,7 @@ impl Variable {
             .collect()
     }
 
+    // TODO: 「その変数が module 内で定義されてるかどうか」を判定する仕様にする
     /// その変数定義 (let_stmt) の親が
     /// - Rule::preamble
     /// - Rule::module_stmt

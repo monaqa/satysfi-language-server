@@ -132,6 +132,11 @@ impl Inner {
             let text = cc.text;
             let doc_data = DocumentData::new(&text, &url);
 
+            if let DocumentData::Parsed { environment, .. } = &doc_data {
+                self.documents
+                    .register_dependencies(&environment.dependencies);
+            }
+
             let diags = get_diagnostics(&doc_data);
             self.documents.0.insert(url.clone(), doc_data);
             self.client.publish_diagnostics(url, diags, None).await;
@@ -145,6 +150,11 @@ impl Inner {
         let text = params.text_document.text;
         let doc_data = DocumentData::new(&text, &url);
 
+        if let DocumentData::Parsed { environment, .. } = &doc_data {
+            self.documents
+                .register_dependencies(&environment.dependencies);
+        }
+
         let diags = get_diagnostics(&doc_data);
         self.documents.0.insert(url.clone(), doc_data);
         self.client.publish_diagnostics(url, diags, None).await;
@@ -153,14 +163,13 @@ impl Inner {
     async fn did_save(&mut self, params: DidSaveTextDocumentParams) {
         let url = params.text_document.uri;
         let doc_data = self.documents.0.get(&url);
-        if let Some(DocumentData::Parsed { environment, .. }) = &doc_data {
-            info!("{:?}", environment);
-        }
 
         if let Some(doc_data) = doc_data {
             let diags = get_diagnostics(&doc_data);
             self.client.publish_diagnostics(url, diags, None).await;
         }
+
+        self.documents.show_envs();
     }
 
     async fn goto_definition(
