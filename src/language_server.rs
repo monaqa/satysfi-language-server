@@ -17,7 +17,7 @@ use crate::{
     config::Config,
     diagnostics::{get_diagnostics, DiagnosticCollection},
     documents::{DocumentCache, DocumentData},
-    util::ConvertPosition,
+    util::{ConvertPosition, UrlPos},
 };
 use satysfi_parser::Rule;
 
@@ -120,7 +120,9 @@ impl Inner {
         let url = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
         if let Some(doc_data) = self.documents.0.get(&url) {
-            Ok(get_completion_list(doc_data, &url, &pos))
+            // Ok(get_completion_list(doc_data, &url, &pos))
+            let curpos = UrlPos { url, pos };
+            Ok(self.documents.get_completion_list(&curpos))
         } else {
             Ok(None)
         }

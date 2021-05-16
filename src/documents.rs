@@ -11,6 +11,10 @@ use satysfi_parser::{Cst, CstText, LineCol, Rule, Span};
 pub struct DocumentCache(pub HashMap<Url, DocumentData>);
 
 impl DocumentCache {
+    pub fn get(&self, url: &Url) -> Option<&DocumentData> {
+        self.0.get(url)
+    }
+
     /// dependencies の中のパッケージについてパースし、 Environment 情報の登録を行う。
     /// この操作は再帰的に行う。
     pub fn register_dependencies(&mut self, deps: &[Dependency]) {
@@ -73,7 +77,7 @@ pub enum DocumentData {
     Parsed {
         /// パース結果の具象構文木 + テキスト本体。
         csttext: CstText,
-        /// 変数やコマンドに関する情報。
+        /// このファイルで定義されている変数やコマンドに関する情報。
         environment: Environment,
     },
 

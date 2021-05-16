@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use lspower::lsp::Position;
+use lspower::lsp::{Position, Url};
 use satysfi_parser::{CstText, LineCol, Span};
 
 /// Position を convert する関数の提供。
@@ -38,4 +38,9 @@ impl ConvertPosition for CstText {
         let column = text.len();
         self.from_line_col(line as usize, column)
     }
+}
+
+pub struct UrlPos {
+    pub url: Url,
+    pub pos: Position,
 }

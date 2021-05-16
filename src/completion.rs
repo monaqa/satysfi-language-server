@@ -9,7 +9,10 @@ use lspower::lsp::{
 use satysfi_parser::Mode;
 use serde::Deserialize;
 
-use crate::{documents::DocumentData, util::ConvertPosition};
+use crate::{
+    documents::{DocumentCache, DocumentData, PackageVisibility},
+    util::{ConvertPosition, UrlPos},
+};
 
 pub const COMPLETION_RESOUCES: &str = include_str!("resource/completion_items.toml");
 
@@ -196,6 +199,95 @@ impl From<CompletionResourceItem> for CompletionItem {
                 })
             }),
             ..Default::default()
+        }
+    }
+}
+
+impl DocumentCache {
+    pub fn get_completion_list(&self, curpos: &UrlPos) -> Option<CompletionResponse> {
+        match self.get_mode(curpos) {
+            Mode::Program => Some(CompletionResponse::Array(
+                self.get_completion_list_program(curpos),
+            )),
+            Mode::ProgramType => None,
+            Mode::Vertical => None,
+            Mode::Horizontal => None,
+            Mode::Math => None,
+            Mode::Header => None,
+            Mode::Literal => None,
+            Mode::Comment => None,
+        }
+    }
+
+    fn get_mode(&self, curpos: &UrlPos) -> Mode {
+        let UrlPos { url, pos } = curpos;
+        if let Some(DocumentData::Parsed { csttext, .. }) = self.get(url) {
+            let pos_usize = csttext.from_position(pos);
+            pos_usize
+                .map(|pos| csttext.cst.mode(pos))
+                .unwrap_or(Mode::Comment)
+        } else {
+            Mode::Comment
+        }
+    }
+
+    fn get_completion_list_program(&self, curpos: &UrlPos) -> Vec<CompletionItem> {
+        let UrlPos { url, pos } = curpos;
+        if let Some(DocumentData::Parsed {
+            csttext,
+            environment,
+        }) = self.get(url)
+        {
+            let pos_usize = csttext.from_position(pos);
+            if pos_usize.is_none() {
+                return vec![];
+            }
+            let pos_usize = pos_usize.unwrap();
+
+            let local_variables = environment
+                .variables
+                .iter()
+                .filter(|var| var.scope.includes(pos_usize))
+                .map(|var| {
+                    CompletionItem::new_simple(
+                        var.body.name.clone(),
+                        "variable defined in this file".to_owned(),
+                    )
+                })
+                .collect_vec();
+
+            // TODO: 直接 require/import していない変数も取れるようにする
+            let deps_variables = environment
+                .dependencies
+                .iter()
+                .map(|dep| {
+                    if let Some(DocumentData::Parsed {
+                        environment: env_dep,
+                        ..
+                    }) = dep.url.as_ref().and_then(|url| self.get(url))
+                    {
+                        env_dep
+                            .variables
+                            .iter()
+                            .filter(|var| var.visibility == PackageVisibility::Public)
+                            .map(|var| {
+                                CompletionItem::new_simple(
+                                    var.body.name.clone(),
+                                    format!("variable defined in package '{}'", dep.name),
+                                )
+                            })
+                            .collect_vec()
+                    } else {
+                        vec![]
+                    }
+                })
+                .concat();
+
+            let primitives = get_primitive_list();
+
+            [local_variables, deps_variables, primitives].concat()
+        } else {
+            vec![]
         }
     }
 }
