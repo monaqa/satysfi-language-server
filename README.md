@@ -34,6 +34,8 @@ At the moment, we are only using
 [coc.nvim](https://github.com/neoclide/coc.nvim) on [Neovim](https://github.com/neovim/neovim)
 to check the operation.
 
+### Usage
+
 In `coc-settings.json`:
 
 ```json
@@ -41,9 +43,29 @@ In `coc-settings.json`:
     "languageserver": {
         "satysfi-ls": {
             "command": "/path/to/satysfi-language-server/target/debug/satysfi-language-server",
-            "args": ["-w"],
+            "args": [],
             "filetypes": ["satysfi"],
             "trace.server": "verbose"
+        }
+    }
+}
+```
+
+#### Debug Mode
+
+```
+/path/to/satysfi-language-server/target/debug/satysfi-language-server --tcp
+```
+
+In `coc-settings.json`:
+
+```json
+{
+    "languageserver": {
+        "socketserver": {
+            "host":"127.0.0.1",
+            "port": 9527,
+            "filetypes": ["satysfi"]
         }
     }
 }

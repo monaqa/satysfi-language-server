@@ -4,10 +4,9 @@
 // [^1]: https://github.com/denoland/deno
 //! The SATySFi language server.
 
-use anyhow::Result;
-use lspower::{LspService, Server};
-
 mod language_server;
+
+pub use language_server::LanguageServer;
 
 mod capabilities;
 mod completion;
@@ -15,19 +14,6 @@ mod config;
 mod diagnostics;
 mod documents;
 mod util;
-
-pub async fn start_language_server() -> Result<()> {
-    let stdin = tokio::io::stdin();
-    let stdout = tokio::io::stdout();
-
-    let (service, messages) = LspService::new(language_server::LanguageServer::new);
-    Server::new(stdin, stdout)
-        .interleave(messages)
-        .serve(service)
-        .await;
-
-    Ok(())
-}
 
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()

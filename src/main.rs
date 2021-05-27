@@ -2,50 +2,49 @@
 // This code partially uses the source code from the project `deno` [^1].
 // [^1]: https://github.com/denoland/deno
 
-use std::path::PathBuf;
-
 use anyhow::Result;
-use log::{error, LevelFilter};
-use satysfi_language_server::start_language_server;
+use lspower::{LspService, Server};
 
-use simplelog::{ConfigBuilder, WriteLogger};
 use structopt::StructOpt;
+use tokio::net::TcpListener;
 
 #[derive(Debug, StructOpt)]
 struct Opts {
-    #[structopt(short, long)]
-    write_log: bool,
-
-    #[structopt(short, long, default_value = "satysfi-language-server.log")]
-    output_log: PathBuf,
+    #[structopt(long)]
+    tcp: bool,
+    #[structopt(short, long, default_value = "9527")]
+    port: u32,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let log_conf = ConfigBuilder::new()
-        .set_time_to_local(true)
-        .set_location_level(LevelFilter::Info)
-        .build();
-
     let opts = Opts::from_args();
 
-    if opts.write_log {
-        WriteLogger::init(
-            LevelFilter::Debug,
-            log_conf,
-            // std::fs::File::create(opts.output_log).unwrap(),
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(opts.output_log)
-                .unwrap(),
-        )
-        .unwrap();
-    }
+    if opts.tcp {
+        if std::env::var("RUST_LOG").is_err() {
+            std::env::set_var("RUST_LOG", "info")
+        }
+        env_logger::init();
 
-    if let Err(e) = start_language_server().await {
-        error!("Fatal error: {:?}", e);
-    }
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", opts.port)).await?;
+        let (stream, _) = listener.accept().await?;
+        let (read, write) = tokio::io::split(stream);
+
+        let (service, messages) = LspService::new(satysfi_language_server::LanguageServer::new);
+        Server::new(read, write)
+            .interleave(messages)
+            .serve(service)
+            .await;
+    } else {
+        let stdin = tokio::io::stdin();
+        let stdout = tokio::io::stdout();
+
+        let (service, messages) = LspService::new(satysfi_language_server::LanguageServer::new);
+        Server::new(stdin, stdout)
+            .interleave(messages)
+            .serve(service)
+            .await;
+    };
 
     Ok(())
 }
