@@ -14,7 +14,7 @@ use crate::{
     util::{ConvertPosition, UrlPos},
 };
 
-pub const COMPLETION_RESOUCES: &str = include_str!("resource/completion_items.toml");
+pub const COMPLETION_RESOUCES: &str = include_str!("../resource/completion_items.toml");
 
 // pub fn get_completion_list(
 //     doc_data: &DocumentData,

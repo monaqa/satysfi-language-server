@@ -15,13 +15,18 @@ use lspower::Client;
 
 use crate::{
     config::Config,
-    diagnostics::{get_diagnostics, DiagnosticCollection},
     documents::{DocumentCache, DocumentData},
     util::{ConvertPosition, UrlPos},
 };
 use satysfi_parser::Rule;
 
-use crate::capabilities;
+use self::diagnostics::{get_diagnostics, DiagnosticCollection};
+
+mod capabilities;
+mod completion;
+mod definition;
+mod diagnostics;
+mod hover;
 
 #[derive(Debug, Clone)]
 pub struct LanguageServer(Arc<tokio::sync::Mutex<Inner>>);
