@@ -10,7 +10,7 @@ use satysfi_parser::Mode;
 use serde::Deserialize;
 
 use crate::{
-    documents::{DocumentCache, DocumentData, PackageVisibility},
+    documents::{DocumentCache, DocumentData, Visibility},
     util::{ConvertPosition, UrlPos},
 };
 
@@ -22,7 +22,10 @@ pub fn get_completion_list(
     pos: &Position,
 ) -> Option<CompletionResponse> {
     match doc_data {
-        DocumentData::Parsed { csttext, .. } => {
+        DocumentData::Parsed {
+            program_text: csttext,
+            ..
+        } => {
             let pos_usize = csttext.from_position(pos)?;
             if csttext.is_comment(pos_usize) {
                 return None;
@@ -67,17 +70,17 @@ pub fn get_variable_list(
 ) -> Vec<CompletionItem> {
     match doc_data {
         DocumentData::Parsed {
-            csttext,
+            program_text: csttext,
             environment,
         } => {
             if let Some(pos_usize) = csttext.from_position(pos) {
                 // TODO: 依存パッケージを遡って検索
                 environment
-                    .variables
+                    .variables()
                     .iter()
                     .filter(|var| var.scope.includes(pos_usize))
                     .map(|var| {
-                        CompletionItem::new_simple(var.body.name.clone(), "in this file".to_owned())
+                        CompletionItem::new_simple(var.name.clone(), "in this file".to_owned())
                     })
                     .collect()
             } else {
@@ -95,17 +98,17 @@ pub fn get_inline_cmd_list(
 ) -> Vec<CompletionItem> {
     match doc_data {
         DocumentData::Parsed {
-            csttext,
+            program_text: csttext,
             environment,
         } => {
             if let Some(pos_usize) = csttext.from_position(pos) {
                 // TODO: 依存パッケージを遡って検索
                 environment
-                    .inline_cmds
+                    .inline_cmds()
                     .iter()
                     .filter(|cmd| cmd.scope.includes(pos_usize))
                     .map(|cmd| {
-                        CompletionItem::new_simple(cmd.body.name.clone(), "in this file".to_owned())
+                        CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
                     })
                     .collect()
             } else {
@@ -123,7 +126,7 @@ pub fn get_block_cmd_list(
 ) -> Vec<CompletionItem> {
     match doc_data {
         DocumentData::Parsed {
-            csttext,
+            program_text: csttext,
             environment,
         } => {
             let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
@@ -132,11 +135,11 @@ pub fn get_block_cmd_list(
             {
                 // TODO: 依存パッケージを遡って検索
                 environment
-                    .block_cmds
+                    .block_cmds()
                     .iter()
                     .filter(|cmd| cmd.scope.includes(pos_usize))
                     .map(|cmd| {
-                        CompletionItem::new_simple(cmd.body.name.clone(), "in this file".to_owned())
+                        CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
                     })
                     .collect()
             } else {
@@ -221,7 +224,11 @@ impl DocumentCache {
 
     fn get_mode(&self, curpos: &UrlPos) -> Mode {
         let UrlPos { url, pos } = curpos;
-        if let Some(DocumentData::Parsed { csttext, .. }) = self.get(url) {
+        if let Some(DocumentData::Parsed {
+            program_text: csttext,
+            ..
+        }) = self.get(url)
+        {
             let pos_usize = csttext.from_position(pos);
             pos_usize
                 .map(|pos| csttext.cst.mode(pos))
@@ -234,7 +241,7 @@ impl DocumentCache {
     fn get_completion_list_program(&self, curpos: &UrlPos) -> Vec<CompletionItem> {
         let UrlPos { url, pos } = curpos;
         if let Some(DocumentData::Parsed {
-            csttext,
+            program_text: csttext,
             environment,
         }) = self.get(url)
         {
@@ -245,12 +252,12 @@ impl DocumentCache {
             let pos_usize = pos_usize.unwrap();
 
             let local_variables = environment
-                .variables
+                .variables()
                 .iter()
                 .filter(|var| var.scope.includes(pos_usize))
                 .map(|var| {
                     CompletionItem::new_simple(
-                        var.body.name.clone(),
+                        var.name.clone(),
                         "variable defined in this file".to_owned(),
                     )
                 })
@@ -258,7 +265,7 @@ impl DocumentCache {
 
             // TODO: 直接 require/import していない変数も取れるようにする
             let deps_variables = environment
-                .dependencies
+                .dependencies()
                 .iter()
                 .map(|dep| {
                     if let Some(DocumentData::Parsed {
@@ -267,12 +274,12 @@ impl DocumentCache {
                     }) = dep.url.as_ref().and_then(|url| self.get(url))
                     {
                         env_dep
-                            .variables
+                            .variables()
                             .iter()
-                            .filter(|var| var.visibility == PackageVisibility::Public)
+                            .filter(|&var| var.visibility == Visibility::Public)
                             .map(|var| {
                                 CompletionItem::new_simple(
-                                    var.body.name.clone(),
+                                    var.name.clone(),
                                     format!("variable defined in package '{}'", dep.name),
                                 )
                             })

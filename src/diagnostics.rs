@@ -22,7 +22,7 @@ const DUMMY_RULES: &[Rule] = &[
 pub fn get_diagnostics(doc_data: &DocumentData) -> Vec<Diagnostic> {
     match doc_data {
         DocumentData::Parsed {
-            csttext,
+            program_text: csttext,
             environment,
         } => {
             let dummy_csts = DUMMY_RULES

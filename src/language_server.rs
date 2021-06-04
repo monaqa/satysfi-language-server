@@ -136,7 +136,7 @@ impl Inner {
 
             if let DocumentData::Parsed { environment, .. } = &doc_data {
                 self.documents
-                    .register_dependencies(&environment.dependencies);
+                    .register_dependencies(environment.dependencies());
             }
 
             let diags = get_diagnostics(&doc_data);
@@ -154,7 +154,7 @@ impl Inner {
 
         if let DocumentData::Parsed { environment, .. } = &doc_data {
             self.documents
-                .register_dependencies(&environment.dependencies);
+                .register_dependencies(environment.dependencies());
         }
 
         let diags = get_diagnostics(&doc_data);
@@ -182,7 +182,7 @@ impl Inner {
         let pos = params.text_document_position_params.position;
 
         if let Some(DocumentData::Parsed {
-            csttext,
+            program_text: csttext,
             environment,
         }) = self.documents.0.get(&uri)
         {
@@ -203,15 +203,15 @@ impl Inner {
 
             let pos_definition = match cst.rule {
                 Rule::var => environment
-                    .variables
+                    .variables()
                     .iter()
                     // カーソルがスコープ内にあって、かつ名前の一致するもの
-                    .find(|var| var.scope.includes(pos_usize) && var.body.name == name)
+                    .find(|var| var.scope.includes(pos_usize) && var.name == name)
                     .map(|var| var.pos_definition),
                 Rule::inline_cmd_name => environment
-                    .inline_cmds
+                    .inline_cmds()
                     .iter()
-                    .find(|var| var.scope.includes(pos_usize) && var.body.name == name)
+                    .find(|var| var.scope.includes(pos_usize) && var.name == name)
                     .map(|var| var.pos_definition),
                 _ => unreachable!(),
             };
@@ -221,8 +221,8 @@ impl Inner {
             }
             let pos_definition = pos_definition.unwrap();
             let range = Range {
-                start: csttext.get_position(pos_definition).unwrap(),
-                end: csttext.get_position(pos_definition + 1).unwrap(),
+                start: csttext.get_position(pos_definition.start).unwrap(),
+                end: csttext.get_position(pos_definition.end).unwrap(),
             };
             let loc = Location { uri, range };
             let resp = GotoDefinitionResponse::Scalar(loc);
