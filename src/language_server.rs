@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use log::{error, info};
 use lspower::{
     jsonrpc::Result as LspResult,
@@ -176,56 +177,12 @@ impl Inner {
         &mut self,
         params: GotoDefinitionParams,
     ) -> LspResult<Option<GotoDefinitionResponse>> {
-        let uri = params.text_document_position_params.text_document.uri;
+        let url = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        if let Some(DocumentData::Parsed {
-            program_text: csttext,
-            environment,
-        }) = self.documents.0.get(&uri)
-        {
-            let pos_usize = csttext.from_position(&pos).unwrap();
-            // カーソル上にある variable や inline-cmd の CST を抽出する
-            let cst = csttext
-                .cst
-                .dig(pos_usize)
-                .into_iter()
-                .find(|&cst| [Rule::var, Rule::inline_cmd_name].contains(&cst.rule));
-            if cst.is_none() {
-                return Ok(None);
-            }
-            // カーソル上にある variable や inline-cmd の CST
-            let cst = cst.unwrap();
-            // 検索したい変数・コマンド名
-            let name = csttext.get_text(cst);
-
-            let pos_definition = match cst.rule {
-                Rule::var => environment
-                    .variables()
-                    .iter()
-                    // カーソルがスコープ内にあって、かつ名前の一致するもの
-                    .find(|var| var.scope.includes(pos_usize) && var.name == name)
-                    .map(|var| var.pos_definition),
-                Rule::inline_cmd_name => environment
-                    .inline_cmds()
-                    .iter()
-                    .find(|var| var.scope.includes(pos_usize) && var.name == name)
-                    .map(|var| var.pos_definition),
-                _ => unreachable!(),
-            };
-
-            if pos_definition.is_none() {
-                return Ok(None);
-            }
-            let pos_definition = pos_definition.unwrap();
-            let range = Range {
-                start: csttext.get_position(pos_definition.start).unwrap(),
-                end: csttext.get_position(pos_definition.end).unwrap(),
-            };
-            let loc = Location { uri, range };
-            let resp = GotoDefinitionResponse::Scalar(loc);
-
-            Ok(Some(resp))
+        if self.documents.0.get(&url).is_some() {
+            let curpos = UrlPos { url, pos };
+            Ok(self.documents.get_definition_list(&curpos))
         } else {
             Ok(None)
         }

@@ -11,6 +11,7 @@ pub use language_server::LanguageServer;
 mod capabilities;
 mod completion;
 mod config;
+mod definition;
 mod diagnostics;
 mod documents;
 mod util;

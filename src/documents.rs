@@ -460,6 +460,8 @@ pub struct Component {
     pub visibility: Visibility,
     /// モジュール内のパブリック変数のとき、宣言がどこにあるか。
     pub pos_declaration: Option<Span>,
+    /// そのコンポーネントが定義されている URL。
+    pub url: Url,
 }
 
 /// モジュールについての情報。モジュール内で定義された変数を格納するのに用いる。
@@ -598,6 +600,7 @@ impl Component {
                     pos_definition,
                     visibility,
                     pos_declaration,
+                    url: url.clone(),
                 }]
             }
 
@@ -643,6 +646,7 @@ impl Component {
                     pos_definition,
                     visibility,
                     pos_declaration,
+                    url: url.clone(),
                 }]
             }
 
