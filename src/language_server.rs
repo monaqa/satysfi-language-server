@@ -188,10 +188,15 @@ impl Inner {
         }
     }
 
-    async fn hover(&mut self, _params: HoverParams) -> LspResult<Option<Hover>> {
-        // let uri = params.text_document_position_params.text_document.uri;
-        // let pos = params.text_document_position_params.position;
+    async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {
+        let url = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
 
-        Ok(None)
+        if self.documents.0.get(&url).is_some() {
+            let curpos = UrlPos { url, pos };
+            Ok(self.documents.get_hover(&curpos))
+        } else {
+            Ok(None)
+        }
     }
 }

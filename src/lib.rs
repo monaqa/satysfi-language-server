@@ -14,6 +14,8 @@ mod config;
 mod definition;
 mod diagnostics;
 mod documents;
+mod hover;
+mod primitive;
 mod util;
 
 pub fn version() -> String {
