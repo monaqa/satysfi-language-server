@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use log::info;
 use lspower::lsp::{
-    CompletionItem, CompletionList, CompletionResponse, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind, Position, Url,
+    CompletionItem, CompletionResponse, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
 };
-use satysfi_parser::{Mode, Rule};
+use satysfi_parser::Mode;
 use serde::Deserialize;
 
 use crate::{

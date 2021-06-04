@@ -1,12 +1,10 @@
-use itertools::Itertools;
 use log::{error, info};
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
         CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, GotoDefinitionParams,
-        GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult, Location,
-        Range, ServerInfo,
+        GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult, ServerInfo,
     },
 };
 use std::sync::Arc;
@@ -16,9 +14,8 @@ use lspower::Client;
 use crate::{
     config::Config,
     documents::{DocumentCache, DocumentData},
-    util::{ConvertPosition, UrlPos},
+    util::UrlPos,
 };
-use satysfi_parser::Rule;
 
 use self::diagnostics::{get_diagnostics, DiagnosticCollection};
 
