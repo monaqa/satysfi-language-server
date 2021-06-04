@@ -43,34 +43,6 @@ impl DocumentCache {
             }
         }
     }
-
-    /// environment を表示する。
-    /// for debug
-    pub fn show_envs(&self) {
-        for (k, v) in self.0.iter() {
-            info!("{:?}:", k);
-            if let DocumentData::Parsed { environment, .. } = v {
-                for dep in &environment.dependencies {
-                    info!("Dependency: {:?}", dep.name);
-                }
-                for module in &environment.modules() {
-                    info!("Module: {:?}", module.name);
-                }
-                for var in &environment.variables() {
-                    info!("Varable: {:?}", var.name);
-                }
-                for cmd in &environment.inline_cmds() {
-                    info!("InlineCmd: {:?}", cmd.name);
-                }
-                for cmd in &environment.block_cmds() {
-                    info!("BlockCmd: {:?}", cmd.name);
-                }
-                for cmd in &environment.math_cmds() {
-                    info!("BlockCmd: {:?}", cmd.name);
-                }
-            }
-        }
-    }
 }
 
 /// 一つのファイルに関するデータを纏めたデータ構造。
@@ -123,6 +95,13 @@ impl DocumentData {
             Ok(DocumentData::new(&text, url))
         } else {
             Err(anyhow!("Failed to convert url to file path."))
+        }
+    }
+
+    pub fn show_envs_debug(&self) {
+        match self {
+            DocumentData::Parsed { environment, .. } => environment.show_debug(),
+            DocumentData::NotParsed { .. } => {}
         }
     }
 }
@@ -211,6 +190,179 @@ impl Environment {
             .iter()
             .filter(|c| matches!(c.body, ComponentBody::MathCmd { .. }))
             .collect_vec()
+    }
+
+    pub fn variables_external(&self, module_open: &[String]) -> Vec<&Component> {
+        let local = self.variables();
+        let in_mods = self
+            .modules()
+            .iter()
+            .filter(|&module| module_open.contains(&module.name))
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Public))
+                    .filter(|c| matches!(c.body, ComponentBody::Variable { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+        [local, in_mods].concat()
+    }
+
+    pub fn types_external(&self, module_open: &[String]) -> Vec<&Component> {
+        let local = self.types();
+        let in_mods = self
+            .modules()
+            .iter()
+            .filter(|&module| module_open.contains(&module.name))
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Public))
+                    .filter(|c| matches!(c.body, ComponentBody::Type { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+        [local, in_mods].concat()
+    }
+
+    pub fn variants_external(&self, module_open: &[String]) -> Vec<&Component> {
+        let local = self.variants();
+        let in_mods = self
+            .modules()
+            .iter()
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Public))
+                    .filter(|c| matches!(c.body, ComponentBody::Variant { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+        [local, in_mods].concat()
+    }
+
+    pub fn inline_cmds_external(&self, module_open: &[String]) -> Vec<&Component> {
+        let local = self.inline_cmds();
+
+        let in_mods = self
+            .modules()
+            .iter()
+            .filter(|&module| module_open.contains(&module.name))
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Public))
+                    .filter(|c| matches!(c.body, ComponentBody::InlineCmd { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+
+        let in_mods_direct = self
+            .modules()
+            .iter()
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Direct))
+                    .filter(|c| matches!(c.body, ComponentBody::InlineCmd { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+
+        [local, in_mods, in_mods_direct].concat()
+    }
+
+    pub fn block_cmds_external(&self, module_open: &[String]) -> Vec<&Component> {
+        let local = self.block_cmds();
+
+        let in_mods = self
+            .modules()
+            .iter()
+            .filter(|&module| module_open.contains(&module.name))
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Public))
+                    .filter(|c| matches!(c.body, ComponentBody::BlockCmd { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+
+        let in_mods_direct = self
+            .modules()
+            .iter()
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Direct))
+                    .filter(|c| matches!(c.body, ComponentBody::BlockCmd { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+
+        [local, in_mods, in_mods_direct].concat()
+    }
+
+    pub fn math_cmds_external(&self, module_open: &[String]) -> Vec<&Component> {
+        let local = self.math_cmds();
+
+        let in_mods = self
+            .modules()
+            .iter()
+            .filter(|&module| module_open.contains(&module.name))
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Public))
+                    .filter(|c| matches!(c.body, ComponentBody::MathCmd { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+
+        let in_mods_direct = self
+            .modules()
+            .iter()
+            .map(|module| match &module.body {
+                ComponentBody::Module { components } => components
+                    .iter()
+                    .filter(|c| matches!(c.visibility, Visibility::Direct))
+                    .filter(|c| matches!(c.body, ComponentBody::MathCmd { .. }))
+                    .collect_vec(),
+                _ => unreachable!(),
+            })
+            .concat();
+
+        [local, in_mods, in_mods_direct].concat()
+    }
+
+    pub fn show_debug(&self) {
+        for dep in &self.dependencies {
+            info!("Dependency: {:?}", dep.name);
+        }
+        for module in self.modules() {
+            info!("Module: {:?}", module.name);
+        }
+        for var in self.variables() {
+            info!("Varable: {:?}", var.name);
+        }
+        for cmd in self.inline_cmds() {
+            info!("InlineCmd: {:?}", cmd.name);
+        }
+        for cmd in self.block_cmds() {
+            info!("BlockCmd: {:?}", cmd.name);
+        }
+        for cmd in self.math_cmds() {
+            info!("BlockCmd: {:?}", cmd.name);
+        }
     }
 }
 
@@ -310,6 +462,42 @@ pub struct Component {
     pub pos_declaration: Option<Span>,
 }
 
+/// モジュールについての情報。モジュール内で定義された変数を格納するのに用いる。
+struct ModuleInfo<'a> {
+    module_span: Span,
+    sigs: &'a [Signature],
+}
+
+impl<'a> ModuleInfo<'a> {
+    fn map_types<'b>(&self, program_text: &'b ProgramText) -> HashMap<&'b str, &Signature> {
+        self.sigs
+            .iter()
+            .filter_map(|sig| match sig {
+                Signature::Type { name, .. } => Some((program_text.get_text(name), sig)),
+                _ => None,
+            })
+            .collect()
+    }
+    fn map_val<'b>(&self, program_text: &'b ProgramText) -> HashMap<&'b str, &Signature> {
+        self.sigs
+            .iter()
+            .filter_map(|sig| match sig {
+                Signature::Val { var, .. } => Some((program_text.get_text(var), sig)),
+                _ => None,
+            })
+            .collect()
+    }
+    fn map_direct<'b>(&self, program_text: &'b ProgramText) -> HashMap<&'b str, &Signature> {
+        self.sigs
+            .iter()
+            .filter_map(|sig| match sig {
+                Signature::Direct { var, .. } => Some((program_text.get_text(var), sig)),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 impl Component {
     fn from_preamble(
         preamble: &[&Statement],
@@ -318,7 +506,19 @@ impl Component {
     ) -> Vec<Component> {
         preamble
             .iter()
-            .map(|stmt| Component::from_stmt(stmt, &[], program_text, url))
+            .map(|stmt| Component::from_stmt(stmt, None, program_text, url))
+            .concat()
+    }
+
+    fn from_struct_stmts(
+        module_info: &ModuleInfo,
+        struct_stmts: &[&Statement],
+        program_text: &ProgramText,
+        url: &Url,
+    ) -> Vec<Component> {
+        struct_stmts
+            .iter()
+            .map(|stmt| Component::from_stmt(stmt, Some(module_info), program_text, url))
             .concat()
     }
 
@@ -328,7 +528,7 @@ impl Component {
     /// みたいな式では x, y という2つの Component が作成されるため。
     fn from_stmt(
         stmt: &Statement,
-        signatures: &[&Signature],
+        module_info: Option<&ModuleInfo>,
         program_text: &ProgramText,
         url: &Url,
     ) -> Vec<Component> {
@@ -340,12 +540,67 @@ impl Component {
                 expr,
             } => vec![],
             Statement::LetRec(_) => vec![],
+
             Statement::LetInline {
                 var_context,
                 cmd,
                 args,
                 expr,
-            } => vec![],
+            } => {
+                let sig_val_map = module_info
+                    .map(|info| info.map_val(program_text))
+                    .unwrap_or_default();
+                let sig_direct_map = module_info
+                    .map(|info| info.map_direct(program_text))
+                    .unwrap_or_default();
+                let name = program_text.get_text(cmd).to_owned();
+                let body = ComponentBody::InlineCmd;
+                let start = expr.span.end;
+                let end = if let Some(info) = module_info {
+                    info.module_span.end
+                } else {
+                    program_text.cst.span.end
+                };
+                let scope = Span { start, end };
+                let pos_definition = cmd.span;
+                let (visibility, pos_declaration) = {
+                    let name = program_text.get_text(cmd);
+                    match (sig_direct_map.get(name), sig_val_map.get(name)) {
+                        (
+                            Some(Signature::Direct {
+                                var,
+                                signature,
+                                constraint,
+                            }),
+                            _,
+                        ) => {
+                            let pos_declaration = signature.span;
+                            (Visibility::Direct, Some(pos_declaration))
+                        }
+                        (
+                            None,
+                            Some(Signature::Val {
+                                var,
+                                signature,
+                                constraint,
+                            }),
+                        ) => {
+                            let pos_declaration = signature.span;
+                            (Visibility::Public, Some(pos_declaration))
+                        }
+                        _ => (Visibility::Private, None),
+                    }
+                };
+                vec![Component {
+                    name,
+                    body,
+                    scope,
+                    pos_definition,
+                    visibility,
+                    pos_declaration,
+                }]
+            }
+
             Statement::LetBlock {
                 var_context,
                 cmd,
@@ -355,11 +610,42 @@ impl Component {
             Statement::LetMath { cmd, args, expr } => vec![],
             Statement::LetMutable { var, expr } => vec![],
             Statement::Type(_) => vec![],
+
             Statement::Module {
-                name,
+                name: mod_name,
                 signature,
                 statements,
-            } => vec![],
+            } => {
+                let name = program_text.get_text(mod_name).to_owned();
+                let module_span = program_text.cst.get_parent(mod_name).unwrap().span;
+                let body = {
+                    let module_info = ModuleInfo {
+                        module_span,
+                        sigs: &signature,
+                    };
+                    let struct_stmt = statements.iter().collect_vec();
+                    let components =
+                        Component::from_struct_stmts(&module_info, &struct_stmt, program_text, url);
+                    ComponentBody::Module { components }
+                };
+                let scope = {
+                    let start = module_span.end;
+                    let end = program_text.cst.span.end;
+                    Span { start, end }
+                };
+                let pos_definition = mod_name.span;
+                let visibility = Default::default();
+                let pos_declaration = None;
+                vec![Component {
+                    name,
+                    body,
+                    scope,
+                    pos_definition,
+                    visibility,
+                    pos_declaration,
+                }]
+            }
+
             Statement::Open(_) => vec![],
         }
     }
@@ -389,4 +675,10 @@ pub enum Visibility {
     Public,
     Private,
     Direct,
+}
+
+impl Default for Visibility {
+    fn default() -> Self {
+        Visibility::Public
+    }
 }

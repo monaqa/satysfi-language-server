@@ -1,19 +1,18 @@
-use log::{debug, error, info};
+use log::{error, info};
 use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
-        CompletionList, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
+        CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, GotoDefinitionParams,
-        GotoDefinitionResponse, Hover, HoverContents, HoverParams, InitializeParams,
-        InitializeResult, LanguageString, Location, MarkedString, MarkupContent, Range, ServerInfo,
+        GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult, Location,
+        Range, ServerInfo,
     },
 };
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use lspower::Client;
 
 use crate::{
-    completion::{get_completion_list, get_primitive_list},
     config::Config,
     diagnostics::{get_diagnostics, DiagnosticCollection},
     documents::{DocumentCache, DocumentData},
@@ -119,8 +118,7 @@ impl Inner {
     ) -> LspResult<Option<CompletionResponse>> {
         let url = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
-        if let Some(doc_data) = self.documents.0.get(&url) {
-            // Ok(get_completion_list(doc_data, &url, &pos))
+        if self.documents.0.get(&url).is_some() {
             let curpos = UrlPos { url, pos };
             Ok(self.documents.get_completion_list(&curpos))
         } else {
@@ -169,9 +167,9 @@ impl Inner {
         if let Some(doc_data) = doc_data {
             let diags = get_diagnostics(&doc_data);
             self.client.publish_diagnostics(url, diags, None).await;
-        }
 
-        self.documents.show_envs();
+            doc_data.show_envs_debug();
+        }
     }
 
     async fn goto_definition(
@@ -233,9 +231,9 @@ impl Inner {
         }
     }
 
-    async fn hover(&mut self, params: HoverParams) -> LspResult<Option<Hover>> {
-        let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+    async fn hover(&mut self, _params: HoverParams) -> LspResult<Option<Hover>> {
+        // let uri = params.text_document_position_params.text_document.uri;
+        // let pos = params.text_document_position_params.position;
 
         Ok(None)
     }

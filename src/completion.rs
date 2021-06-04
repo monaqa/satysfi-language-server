@@ -6,7 +6,7 @@ use lspower::lsp::{
     CompletionItem, CompletionList, CompletionResponse, Documentation, InsertTextFormat,
     MarkupContent, MarkupKind, Position, Url,
 };
-use satysfi_parser::Mode;
+use satysfi_parser::{Mode, Rule};
 use serde::Deserialize;
 
 use crate::{
@@ -16,139 +16,139 @@ use crate::{
 
 pub const COMPLETION_RESOUCES: &str = include_str!("resource/completion_items.toml");
 
-pub fn get_completion_list(
-    doc_data: &DocumentData,
-    url: &Url,
-    pos: &Position,
-) -> Option<CompletionResponse> {
-    match doc_data {
-        DocumentData::Parsed {
-            program_text: csttext,
-            ..
-        } => {
-            let pos_usize = csttext.from_position(pos)?;
-            if csttext.is_comment(pos_usize) {
-                return None;
-            }
-            let mode = csttext.cst.mode(pos_usize);
-            info!("{:?}", mode);
-            match mode {
-                Mode::Program => {
-                    let mut items = vec![];
-                    items.extend(get_variable_list(doc_data, url, pos));
-                    items.extend(get_primitive_list());
-                    Some(CompletionResponse::List(CompletionList {
-                        is_incomplete: false,
-                        items,
-                    }))
-                }
-                Mode::Horizontal => {
-                    let items = get_inline_cmd_list(doc_data, url, pos);
-                    Some(CompletionResponse::List(CompletionList {
-                        is_incomplete: false,
-                        items,
-                    }))
-                }
-                Mode::Vertical => {
-                    let items = get_block_cmd_list(doc_data, url, pos);
-                    Some(CompletionResponse::List(CompletionList {
-                        is_incomplete: false,
-                        items,
-                    }))
-                }
-                _ => None,
-            }
-        }
-        DocumentData::NotParsed { .. } => None,
-    }
-}
-
-pub fn get_variable_list(
-    doc_data: &DocumentData,
-    url: &Url,
-    pos: &Position,
-) -> Vec<CompletionItem> {
-    match doc_data {
-        DocumentData::Parsed {
-            program_text: csttext,
-            environment,
-        } => {
-            if let Some(pos_usize) = csttext.from_position(pos) {
-                // TODO: 依存パッケージを遡って検索
-                environment
-                    .variables()
-                    .iter()
-                    .filter(|var| var.scope.includes(pos_usize))
-                    .map(|var| {
-                        CompletionItem::new_simple(var.name.clone(), "in this file".to_owned())
-                    })
-                    .collect()
-            } else {
-                vec![]
-            }
-        }
-        DocumentData::NotParsed { .. } => vec![],
-    }
-}
-
-pub fn get_inline_cmd_list(
-    doc_data: &DocumentData,
-    url: &Url,
-    pos: &Position,
-) -> Vec<CompletionItem> {
-    match doc_data {
-        DocumentData::Parsed {
-            program_text: csttext,
-            environment,
-        } => {
-            if let Some(pos_usize) = csttext.from_position(pos) {
-                // TODO: 依存パッケージを遡って検索
-                environment
-                    .inline_cmds()
-                    .iter()
-                    .filter(|cmd| cmd.scope.includes(pos_usize))
-                    .map(|cmd| {
-                        CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
-                    })
-                    .collect()
-            } else {
-                vec![]
-            }
-        }
-        DocumentData::NotParsed { .. } => vec![],
-    }
-}
-
-pub fn get_block_cmd_list(
-    doc_data: &DocumentData,
-    url: &Url,
-    pos: &Position,
-) -> Vec<CompletionItem> {
-    match doc_data {
-        DocumentData::Parsed {
-            program_text: csttext,
-            environment,
-        } => {
-            let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
-            if let Some(pos_usize) =
-                csttext.from_line_col(pos.line as usize, pos.character as usize)
-            {
-                // TODO: 依存パッケージを遡って検索
-                environment
-                    .block_cmds()
-                    .iter()
-                    .filter(|cmd| cmd.scope.includes(pos_usize))
-                    .map(|cmd| {
-                        CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
-                    })
-                    .collect()
-            } else {
-                vec![]
-            }
-        }
-        DocumentData::NotParsed { .. } => vec![],
-    }
-}
+// pub fn get_completion_list(
+//     doc_data: &DocumentData,
+//     url: &Url,
+//     pos: &Position,
+// ) -> Option<CompletionResponse> {
+//     match doc_data {
+//         DocumentData::Parsed {
+//             program_text: csttext,
+//             ..
+//         } => {
+//             let pos_usize = csttext.from_position(pos)?;
+//             if csttext.is_comment(pos_usize) {
+//                 return None;
+//             }
+//             let mode = csttext.cst.mode(pos_usize);
+//             info!("{:?}", mode);
+//             match mode {
+//                 Mode::Program => {
+//                     let mut items = vec![];
+//                     items.extend(get_variable_list(doc_data, url, pos));
+//                     items.extend(get_primitive_list());
+//                     Some(CompletionResponse::List(CompletionList {
+//                         is_incomplete: false,
+//                         items,
+//                     }))
+//                 }
+//                 Mode::Horizontal => {
+//                     let items = get_inline_cmd_list(doc_data, url, pos);
+//                     Some(CompletionResponse::List(CompletionList {
+//                         is_incomplete: false,
+//                         items,
+//                     }))
+//                 }
+//                 Mode::Vertical => {
+//                     let items = get_block_cmd_list(doc_data, url, pos);
+//                     Some(CompletionResponse::List(CompletionList {
+//                         is_incomplete: false,
+//                         items,
+//                     }))
+//                 }
+//                 _ => None,
+//             }
+//         }
+//         DocumentData::NotParsed { .. } => None,
+//     }
+// }
+//
+// pub fn get_variable_list(
+//     doc_data: &DocumentData,
+//     url: &Url,
+//     pos: &Position,
+// ) -> Vec<CompletionItem> {
+//     match doc_data {
+//         DocumentData::Parsed {
+//             program_text: csttext,
+//             environment,
+//         } => {
+//             if let Some(pos_usize) = csttext.from_position(pos) {
+//                 // TODO: 依存パッケージを遡って検索
+//                 environment
+//                     .variables()
+//                     .iter()
+//                     .filter(|var| var.scope.includes(pos_usize))
+//                     .map(|var| {
+//                         CompletionItem::new_simple(var.name.clone(), "in this file".to_owned())
+//                     })
+//                     .collect()
+//             } else {
+//                 vec![]
+//             }
+//         }
+//         DocumentData::NotParsed { .. } => vec![],
+//     }
+// }
+//
+// pub fn get_inline_cmd_list(
+//     doc_data: &DocumentData,
+//     url: &Url,
+//     pos: &Position,
+// ) -> Vec<CompletionItem> {
+//     match doc_data {
+//         DocumentData::Parsed {
+//             program_text: csttext,
+//             environment,
+//         } => {
+//             if let Some(pos_usize) = csttext.from_position(pos) {
+//                 // TODO: 依存パッケージを遡って検索
+//                 environment
+//                     .inline_cmds()
+//                     .iter()
+//                     .filter(|cmd| cmd.scope.includes(pos_usize))
+//                     .map(|cmd| {
+//                         CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
+//                     })
+//                     .collect()
+//             } else {
+//                 vec![]
+//             }
+//         }
+//         DocumentData::NotParsed { .. } => vec![],
+//     }
+// }
+//
+// pub fn get_block_cmd_list(
+//     doc_data: &DocumentData,
+//     url: &Url,
+//     pos: &Position,
+// ) -> Vec<CompletionItem> {
+//     match doc_data {
+//         DocumentData::Parsed {
+//             program_text: csttext,
+//             environment,
+//         } => {
+//             let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
+//             if let Some(pos_usize) =
+//                 csttext.from_line_col(pos.line as usize, pos.character as usize)
+//             {
+//                 // TODO: 依存パッケージを遡って検索
+//                 environment
+//                     .block_cmds()
+//                     .iter()
+//                     .filter(|cmd| cmd.scope.includes(pos_usize))
+//                     .map(|cmd| {
+//                         CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
+//                     })
+//                     .collect()
+//             } else {
+//                 vec![]
+//             }
+//         }
+//         DocumentData::NotParsed { .. } => vec![],
+//     }
+// }
 
 pub fn get_primitive_list() -> Vec<CompletionItem> {
     let resources = get_resouce_items();
@@ -214,7 +214,9 @@ impl DocumentCache {
             )),
             Mode::ProgramType => None,
             Mode::Vertical => None,
-            Mode::Horizontal => None,
+            Mode::Horizontal => Some(CompletionResponse::Array(
+                self.get_completion_list_horizontal(curpos),
+            )),
             Mode::Math => None,
             Mode::Header => None,
             Mode::Literal => None,
@@ -224,14 +226,10 @@ impl DocumentCache {
 
     fn get_mode(&self, curpos: &UrlPos) -> Mode {
         let UrlPos { url, pos } = curpos;
-        if let Some(DocumentData::Parsed {
-            program_text: csttext,
-            ..
-        }) = self.get(url)
-        {
-            let pos_usize = csttext.from_position(pos);
+        if let Some(DocumentData::Parsed { program_text, .. }) = self.get(url) {
+            let pos_usize = program_text.from_position(pos);
             pos_usize
-                .map(|pos| csttext.cst.mode(pos))
+                .map(|pos| program_text.cst.mode(pos))
                 .unwrap_or(Mode::Comment)
         } else {
             Mode::Comment
@@ -241,11 +239,11 @@ impl DocumentCache {
     fn get_completion_list_program(&self, curpos: &UrlPos) -> Vec<CompletionItem> {
         let UrlPos { url, pos } = curpos;
         if let Some(DocumentData::Parsed {
-            program_text: csttext,
+            program_text,
             environment,
         }) = self.get(url)
         {
-            let pos_usize = csttext.from_position(pos);
+            let pos_usize = program_text.from_position(pos);
             if pos_usize.is_none() {
                 return vec![];
             }
@@ -264,6 +262,7 @@ impl DocumentCache {
                 .collect_vec();
 
             // TODO: 直接 require/import していない変数も取れるようにする
+            // let open_in = program_text.cst.dig(curpos).iter().filter(|cst| cst.rule == Rule::bind_stmt && cst.inner[0].rule == Rule::open_stmt)
             let deps_variables = environment
                 .dependencies()
                 .iter()
@@ -274,9 +273,8 @@ impl DocumentCache {
                     }) = dep.url.as_ref().and_then(|url| self.get(url))
                     {
                         env_dep
-                            .variables()
+                            .variables_external(&[])
                             .iter()
-                            .filter(|&var| var.visibility == Visibility::Public)
                             .map(|var| {
                                 CompletionItem::new_simple(
                                     var.name.clone(),
@@ -293,6 +291,66 @@ impl DocumentCache {
             let primitives = get_primitive_list();
 
             [local_variables, deps_variables, primitives].concat()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_completion_list_horizontal(&self, curpos: &UrlPos) -> Vec<CompletionItem> {
+        let UrlPos { url, pos } = curpos;
+        if let Some(DocumentData::Parsed {
+            program_text,
+            environment,
+        }) = self.get(url)
+        {
+            let pos_usize = program_text.from_position(pos);
+            if pos_usize.is_none() {
+                return vec![];
+            }
+            let pos_usize = pos_usize.unwrap();
+
+            let local_commands = environment
+                .inline_cmds()
+                .iter()
+                .filter(|var| var.scope.includes(pos_usize))
+                .map(|cmd| {
+                    CompletionItem::new_simple(
+                        cmd.name.clone(),
+                        "inline-cmd defined in this file".to_owned(),
+                    )
+                })
+                .collect_vec();
+
+            // TODO: 直接 require/import していない変数も取れるようにする
+            let deps_commands = environment
+                .dependencies()
+                .iter()
+                .map(|dep| {
+                    if let Some(DocumentData::Parsed {
+                        environment: env_dep,
+                        ..
+                    }) = dep.url.as_ref().and_then(|url| self.get(url))
+                    {
+                        env_dep
+                            .inline_cmds_external(&[])
+                            .iter()
+                            .filter(|&cmd| {
+                                matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
+                            })
+                            .map(|cmd| {
+                                CompletionItem::new_simple(
+                                    cmd.name.clone(),
+                                    format!("inline-cmd defined in package '{}'", dep.name),
+                                )
+                            })
+                            .collect_vec()
+                    } else {
+                        vec![]
+                    }
+                })
+                .concat();
+
+            [local_commands, deps_commands].concat()
         } else {
             vec![]
         }

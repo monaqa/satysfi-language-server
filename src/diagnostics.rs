@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use log::info;
 use lspower::lsp::{Diagnostic, DiagnosticSeverity, Position, Range, Url};
-use satysfi_parser::{LineCol, Rule};
+use satysfi_parser::Rule;
 use std::collections::HashMap;
 
 use crate::{documents::DocumentData, util::ConvertPosition};
@@ -23,7 +23,7 @@ pub fn get_diagnostics(doc_data: &DocumentData) -> Vec<Diagnostic> {
     match doc_data {
         DocumentData::Parsed {
             program_text: csttext,
-            environment,
+            ..
         } => {
             let dummy_csts = DUMMY_RULES
                 .iter()
