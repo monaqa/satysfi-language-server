@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
+use log::info;
 use lspower::lsp::{
     CompletionItem, CompletionResponse, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
 };
@@ -211,11 +212,15 @@ impl DocumentCache {
                 self.get_completion_list_program(curpos),
             )),
             Mode::ProgramType => None,
-            Mode::Vertical => None,
+            Mode::Vertical => Some(CompletionResponse::Array(
+                self.get_completion_list_vertical(curpos),
+            )),
             Mode::Horizontal => Some(CompletionResponse::Array(
                 self.get_completion_list_horizontal(curpos),
             )),
-            Mode::Math => None,
+            Mode::Math => Some(CompletionResponse::Array(
+                self.get_completion_list_math(curpos),
+            )),
             Mode::Header => None,
             Mode::Literal => None,
             Mode::Comment => None,
@@ -261,8 +266,8 @@ impl DocumentCache {
 
             // TODO: 直接 require/import していない変数も取れるようにする
             // let open_in = program_text.cst.dig(curpos).iter().filter(|cst| cst.rule == Rule::bind_stmt && cst.inner[0].rule == Rule::open_stmt)
-            let deps_variables = environment
-                .dependencies()
+            let deps_variables = self
+                .get_dependencies_recursive(environment.dependencies())
                 .iter()
                 .map(|dep| {
                     if let Some(DocumentData::Parsed {
@@ -320,8 +325,8 @@ impl DocumentCache {
                 .collect_vec();
 
             // TODO: 直接 require/import していない変数も取れるようにする
-            let deps_commands = environment
-                .dependencies()
+            let deps_commands = self
+                .get_dependencies_recursive(environment.dependencies())
                 .iter()
                 .map(|dep| {
                     if let Some(DocumentData::Parsed {
@@ -339,6 +344,126 @@ impl DocumentCache {
                                 CompletionItem::new_simple(
                                     cmd.name.clone(),
                                     format!("inline-cmd defined in package '{}'", dep.name),
+                                )
+                            })
+                            .collect_vec()
+                    } else {
+                        vec![]
+                    }
+                })
+                .concat();
+
+            [local_commands, deps_commands].concat()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_completion_list_vertical(&self, curpos: &UrlPos) -> Vec<CompletionItem> {
+        let UrlPos { url, pos } = curpos;
+        if let Some(DocumentData::Parsed {
+            program_text,
+            environment,
+        }) = self.get(url)
+        {
+            let pos_usize = program_text.from_position(pos);
+            if pos_usize.is_none() {
+                return vec![];
+            }
+            let pos_usize = pos_usize.unwrap();
+
+            let local_commands = environment
+                .block_cmds()
+                .iter()
+                .filter(|var| var.scope.includes(pos_usize))
+                .map(|cmd| {
+                    CompletionItem::new_simple(
+                        cmd.name.clone(),
+                        "block-cmd defined in this file".to_owned(),
+                    )
+                })
+                .collect_vec();
+
+            // TODO: 直接 require/import していない変数も取れるようにする
+            let deps_commands = self
+                .get_dependencies_recursive(environment.dependencies())
+                .iter()
+                .map(|dep| {
+                    if let Some(DocumentData::Parsed {
+                        environment: env_dep,
+                        ..
+                    }) = dep.url.as_ref().and_then(|url| self.get(url))
+                    {
+                        env_dep
+                            .block_cmds_external(&[])
+                            .iter()
+                            .filter(|&cmd| {
+                                matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
+                            })
+                            .map(|cmd| {
+                                CompletionItem::new_simple(
+                                    cmd.name.clone(),
+                                    format!("block-cmd defined in package '{}'", dep.name),
+                                )
+                            })
+                            .collect_vec()
+                    } else {
+                        vec![]
+                    }
+                })
+                .concat();
+
+            [local_commands, deps_commands].concat()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_completion_list_math(&self, curpos: &UrlPos) -> Vec<CompletionItem> {
+        let UrlPos { url, pos } = curpos;
+        if let Some(DocumentData::Parsed {
+            program_text,
+            environment,
+        }) = self.get(url)
+        {
+            let pos_usize = program_text.from_position(pos);
+            if pos_usize.is_none() {
+                return vec![];
+            }
+            let pos_usize = pos_usize.unwrap();
+
+            let local_commands = environment
+                .math_cmds()
+                .iter()
+                .filter(|var| var.scope.includes(pos_usize))
+                .map(|cmd| {
+                    CompletionItem::new_simple(
+                        cmd.name.clone(),
+                        "math-cmd defined in this file".to_owned(),
+                    )
+                })
+                .collect_vec();
+
+            // TODO: 直接 require/import していない変数も取れるようにする
+            let deps_commands = self
+                .get_dependencies_recursive(environment.dependencies())
+                .iter()
+                .map(|dep| {
+                    if let Some(DocumentData::Parsed {
+                        environment: env_dep,
+                        ..
+                    }) = dep.url.as_ref().and_then(|url| self.get(url))
+                    {
+                        env_dep
+                            .math_cmds_external(&[])
+                            .iter()
+                            .filter(|&cmd| {
+                                matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
+                            })
+                            .map(|cmd| {
+                                CompletionItem::new_simple(
+                                    cmd.name.clone(),
+                                    format!("math-cmd defined in package '{}'", dep.name),
                                 )
                             })
                             .collect_vec()

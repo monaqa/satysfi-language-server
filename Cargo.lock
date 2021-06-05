@@ -665,7 +665,7 @@ dependencies = [
 [[package]]
 name = "satysfi-parser"
 version = "0.1.0"
-source = "git+https://github.com/monaqa/satysfi-parser?rev=8b7f37bfd9c0b0f731a021b6e31a943d2a819204#8b7f37bfd9c0b0f731a021b6e31a943d2a819204"
+source = "git+https://github.com/monaqa/satysfi-parser?rev=31cbe722370f4149d38b2a982f86632a4abf6014#31cbe722370f4149d38b2a982f86632a4abf6014"
 dependencies = [
  "anyhow",
  "glob",

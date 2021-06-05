@@ -1,12 +1,15 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use log::info;
 use lspower::lsp::Url;
 use satysfi_parser::{
-    structure::{Header, Program, ProgramText, Signature, Statement},
-    LineCol, Span,
+    structure::{Header, LetRecInner, Program, ProgramText, Signature, Statement, TypeInner},
+    Cst, LineCol, Rule, Span,
 };
 
 /// オンメモリで取り扱うデータをまとめたデータ構造。
@@ -42,6 +45,44 @@ impl DocumentCache {
                 }
             }
         }
+    }
+
+    pub fn get_dependencies_recursive<'a>(&'a self, deps: &'a [Dependency]) -> Vec<&'a Dependency> {
+        deps.iter()
+            .map(|dep| self.get_dependency_recursive(dep).into_iter().collect_vec())
+            .concat()
+            .into_iter()
+            .collect::<HashMap<_, _>>() // 重複した URL を排除
+            .into_iter()
+            .map(|(_, dep)| dep)
+            .collect_vec()
+    }
+
+    /// その dependency 先のファイルを読み、そのファイルが依存しているものを再帰的に取り出す。
+    fn get_dependency_recursive<'a>(&'a self, dep: &'a Dependency) -> HashMap<Url, &'a Dependency> {
+        let mut hm = HashMap::new();
+        if let Some(url) = &dep.url {
+            if !hm.contains_key(url) {
+                hm.insert(url.clone(), dep);
+            }
+        }
+
+        if let Some(DocumentData::Parsed {
+            program_text,
+            environment,
+        }) = dep.url.as_ref().and_then(|url| self.0.get(url))
+        {
+            for dep in &environment.dependencies {
+                if let Some(url) = &dep.url {
+                    if !hm.contains_key(url) {
+                        hm.insert(url.clone(), dep);
+                        let child_hm = self.get_dependency_recursive(dep);
+                        hm = hm.into_iter().chain(child_hm).collect();
+                    }
+                }
+            }
+        }
+        hm
     }
 }
 
@@ -535,62 +576,77 @@ impl Component {
         url: &Url,
     ) -> Vec<Component> {
         match stmt {
-            Statement::Let {
-                pat,
-                type_annot,
-                args,
-                expr,
-            } => vec![],
-            Statement::LetRec(_) => vec![],
+            Statement::Let { pat, expr, .. } => {
+                let vars = pat.pickup(Rule::var);
+                let scope = {
+                    let start = expr.span.end;
+                    let end = if let Some(info) = module_info {
+                        info.module_span.end
+                    } else {
+                        program_text.cst.span.end
+                    };
+                    Span { start, end }
+                };
+                vars.into_iter()
+                    .map(|var| Component::new_variable(var, scope, module_info, program_text, url))
+                    .collect()
+            }
 
-            Statement::LetInline {
-                var_context,
-                cmd,
-                args,
-                expr,
-            } => {
-                let sig_val_map = module_info
-                    .map(|info| info.map_val(program_text))
-                    .unwrap_or_default();
-                let sig_direct_map = module_info
-                    .map(|info| info.map_direct(program_text))
-                    .unwrap_or_default();
+            Statement::LetRec(inners) => {
+                let scope = {
+                    // recursive のため自身の関数の定義内で自身の関数を呼び出せる
+                    let start = inners.get(0).unwrap().pattern.span.end;
+                    let end = if let Some(info) = module_info {
+                        info.module_span.end
+                    } else {
+                        program_text.cst.span.end
+                    };
+                    Span { start, end }
+                };
+                inners
+                    .iter()
+                    .map(|LetRecInner { pattern, .. }| {
+                        let vars = pattern.pickup(Rule::var);
+                        vars.into_iter()
+                            .map(|var| {
+                                Component::new_variable(var, scope, module_info, program_text, url)
+                            })
+                            .collect()
+                    })
+                    .concat()
+            }
+
+            Statement::LetInline { cmd, expr, .. } => {
                 let name = program_text.get_text(cmd).to_owned();
                 let body = ComponentBody::InlineCmd;
-                let start = expr.span.end;
-                let end = if let Some(info) = module_info {
-                    info.module_span.end
-                } else {
-                    program_text.cst.span.end
+                let scope = {
+                    let start = expr.span.end;
+                    let end = if let Some(info) = module_info {
+                        info.module_span.end
+                    } else {
+                        program_text.cst.span.end
+                    };
+                    Span { start, end }
                 };
-                let scope = Span { start, end };
                 let pos_definition = cmd.span;
                 let (visibility, pos_declaration) = {
-                    let name = program_text.get_text(cmd);
-                    match (sig_direct_map.get(name), sig_val_map.get(name)) {
-                        (
-                            Some(Signature::Direct {
-                                var,
-                                signature,
-                                constraint,
-                            }),
-                            _,
-                        ) => {
-                            let pos_declaration = signature.span;
-                            (Visibility::Direct, Some(pos_declaration))
+                    if let Some(info) = module_info {
+                        let sig_val_map = info.map_val(program_text);
+                        let sig_direct_map = info.map_direct(program_text);
+                        let name = program_text.get_text(cmd);
+                        match (sig_direct_map.get(name), sig_val_map.get(name)) {
+                            (Some(Signature::Direct { signature, .. }), _) => {
+                                let pos_declaration = signature.span;
+                                (Visibility::Direct, Some(pos_declaration))
+                            }
+                            (None, Some(Signature::Val { signature, .. })) => {
+                                let pos_declaration = signature.span;
+                                (Visibility::Public, Some(pos_declaration))
+                            }
+                            _ => (Visibility::Private, None),
                         }
-                        (
-                            None,
-                            Some(Signature::Val {
-                                var,
-                                signature,
-                                constraint,
-                            }),
-                        ) => {
-                            let pos_declaration = signature.span;
-                            (Visibility::Public, Some(pos_declaration))
-                        }
-                        _ => (Visibility::Private, None),
+                    } else {
+                        (Visibility::Public, None)
                     }
                 };
                 vec![Component {
@@ -604,15 +660,163 @@ impl Component {
                 }]
             }
 
-            Statement::LetBlock {
-                var_context,
-                cmd,
-                args,
-                expr,
-            } => vec![],
-            Statement::LetMath { cmd, args, expr } => vec![],
-            Statement::LetMutable { var, expr } => vec![],
-            Statement::Type(_) => vec![],
+            Statement::LetBlock { cmd, expr, .. } => {
+                let name = program_text.get_text(cmd).to_owned();
+                let body = ComponentBody::BlockCmd;
+                let start = expr.span.end;
+                let end = if let Some(info) = module_info {
+                    info.module_span.end
+                } else {
+                    program_text.cst.span.end
+                };
+                let scope = Span { start, end };
+                let pos_definition = cmd.span;
+                let (visibility, pos_declaration) = if let Some(info) = module_info {
+                    let sig_val_map = info.map_val(program_text);
+                    let sig_direct_map = info.map_direct(program_text);
+                    let name = program_text.get_text(cmd);
+                    match (sig_direct_map.get(name), sig_val_map.get(name)) {
+                        (Some(Signature::Direct { signature, .. }), _) => {
+                            let pos_declaration = signature.span;
+                            (Visibility::Direct, Some(pos_declaration))
+                        }
+                        (None, Some(Signature::Val { signature, .. })) => {
+                            let pos_declaration = signature.span;
+                            (Visibility::Public, Some(pos_declaration))
+                        }
+                        _ => (Visibility::Private, None),
+                    }
+                } else {
+                    (Visibility::Public, None)
+                };
+                vec![Component {
+                    name,
+                    body,
+                    scope,
+                    pos_definition,
+                    visibility,
+                    pos_declaration,
+                    url: url.clone(),
+                }]
+            }
+
+            Statement::LetMath { cmd, expr, .. } => {
+                let name = program_text.get_text(cmd).to_owned();
+                let body = ComponentBody::MathCmd;
+                let start = expr.span.end;
+                let end = if let Some(info) = module_info {
+                    info.module_span.end
+                } else {
+                    program_text.cst.span.end
+                };
+                let scope = Span { start, end };
+                let pos_definition = cmd.span;
+                let (visibility, pos_declaration) = {
+                    if let Some(info) = module_info {
+                        let sig_val_map = info.map_val(program_text);
+                        let sig_direct_map = info.map_direct(program_text);
+                        let name = program_text.get_text(cmd);
+                        match (sig_direct_map.get(name), sig_val_map.get(name)) {
+                            (Some(Signature::Direct { signature, .. }), _) => {
+                                let pos_declaration = signature.span;
+                                (Visibility::Direct, Some(pos_declaration))
+                            }
+                            (None, Some(Signature::Val { signature, .. })) => {
+                                let pos_declaration = signature.span;
+                                (Visibility::Public, Some(pos_declaration))
+                            }
+                            _ => (Visibility::Private, None),
+                        }
+                    } else {
+                        (Visibility::Public, None)
+                    }
+                };
+                vec![Component {
+                    name,
+                    body,
+                    scope,
+                    pos_definition,
+                    visibility,
+                    pos_declaration,
+                    url: url.clone(),
+                }]
+            }
+
+            Statement::LetMutable { var, expr } => {
+                let name = program_text.get_text(var).to_owned();
+                let body = ComponentBody::Variable {
+                    type_declaration: None,
+                };
+                let scope = {
+                    let start = expr.span.end;
+                    let end = program_text.cst.span.end;
+                    Span { start, end }
+                };
+                let pos_definition = var.span;
+                let (visibility, pos_declaration) = if let Some(info) = module_info {
+                    let sig_val_map = info.map_val(program_text);
+                    let name = program_text.get_text(var);
+                    match sig_val_map.get(name) {
+                        Some(Signature::Val { var, .. }) => {
+                            let pos_declaration = var.span;
+                            (Visibility::Public, Some(pos_declaration))
+                        }
+                        _ => (Visibility::Private, None),
+                    }
+                } else {
+                    (Visibility::Public, None)
+                };
+                vec![Component {
+                    name,
+                    body,
+                    scope,
+                    pos_definition,
+                    visibility,
+                    pos_declaration,
+                    url: url.clone(),
+                }]
+            }
+
+            Statement::Type(inners) => inners
+                .iter()
+                .map(
+                    |TypeInner {
+                         name: type_name, ..
+                     }| {
+                        let name = program_text.get_text(type_name).to_owned();
+                        let stmt_span = program_text.cst.get_parent(type_name).unwrap().span;
+                        let body = ComponentBody::Type;
+                        let scope = {
+                            let start = stmt_span.end;
+                            let end = program_text.cst.span.end;
+                            Span { start, end }
+                        };
+                        let pos_definition = type_name.span;
+                        let (visibility, pos_declaration) = if let Some(info) = module_info {
+                            let sig_val_map = info.map_val(program_text);
+                            let name = program_text.get_text(type_name);
+                            match sig_val_map.get(name) {
+                                Some(Signature::Val { var, .. }) => {
+                                    let pos_declaration = var.span;
+                                    (Visibility::Public, Some(pos_declaration))
+                                }
+                                _ => (Visibility::Private, None),
+                            }
+                        } else {
+                            (Visibility::Public, None)
+                        };
+                        Component {
+                            name,
+                            body,
+                            scope,
+                            pos_definition,
+                            visibility,
+                            pos_declaration,
+                            url: url.clone(),
+                        }
+                    },
+                )
+                .collect(),
 
             Statement::Module {
                 name: mod_name,
@@ -651,6 +855,45 @@ impl Component {
             }
 
             Statement::Open(_) => vec![],
+        }
+    }
+
+    fn new_variable(
+        var: &Cst,
+        scope: Span,
+        module_info: Option<&ModuleInfo>,
+        program_text: &ProgramText,
+        url: &Url,
+    ) -> Component {
+        let name = program_text.get_text(var).to_owned();
+        let pos_definition = var.span;
+        let (visibility, pos_declaration, type_declaration) = if let Some(info) = module_info {
+            let sig_val_map = info.map_val(program_text);
+            let name = program_text.get_text(var);
+            match sig_val_map.get(name) {
+                Some(Signature::Val { var, signature, .. }) => {
+                    let pos_declaration = var.span;
+                    let type_declaration = signature.span;
+                    (
+                        Visibility::Public,
+                        Some(pos_declaration),
+                        Some(type_declaration),
+                    )
+                }
+                _ => (Visibility::Private, None, None),
+            }
+        } else {
+            (Visibility::Public, None, None)
+        };
+        let body = ComponentBody::Variable { type_declaration };
+        Component {
+            name,
+            body,
+            scope,
+            pos_definition,
+            visibility,
+            pos_declaration,
+            url: url.clone(),
         }
     }
 }

@@ -19,6 +19,6 @@ thiserror = "1.0.24"
 tokio = { version = "1.2.0", features = ["full"] }
 toml = "0.5.8"
 # https://github.com/monaqa/satysfi-parser/commit/8b7f37bfd9c0b0f731a021b6e31a943d2a819204
-satysfi-parser = { git = "https://github.com/monaqa/satysfi-parser", rev = "8b7f37bfd9c0b0f731a021b6e31a943d2a819204"}
+satysfi-parser = { git = "https://github.com/monaqa/satysfi-parser", rev = "31cbe722370f4149d38b2a982f86632a4abf6014"}
 # satysfi-parser = { path = "../satysfi-parser" }
 peg = "0.7.0"
