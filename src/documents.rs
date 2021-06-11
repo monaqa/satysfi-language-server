@@ -21,6 +21,15 @@ impl DocumentCache {
         self.0.get(url)
     }
 
+    pub fn get_text_from_span<'a>(&'a self, url: &Url, span: Span) -> Option<&'a str> {
+        let doc = self.0.get(url)?;
+        if let DocumentData::Parsed { program_text, .. } = doc {
+            Some(program_text.get_text_from_span(span))
+        } else {
+            None
+        }
+    }
+
     /// dependencies の中のパッケージについてパースし、 Environment 情報の登録を行う。
     /// この操作は再帰的に行う。
     pub fn register_dependencies(&mut self, deps: &[Dependency]) {
@@ -618,7 +627,6 @@ impl Component {
 
             Statement::LetInline { cmd, expr, .. } => {
                 let name = program_text.get_text(cmd).to_owned();
-                let body = ComponentBody::InlineCmd;
                 let scope = {
                     let start = expr.span.end;
                     let end = if let Some(info) = module_info {
@@ -629,26 +637,25 @@ impl Component {
                     Span { start, end }
                 };
                 let pos_definition = cmd.span;
-                let (visibility, pos_declaration) = {
+                let (visibility, pos_declaration, type_declaration) = {
                     if let Some(info) = module_info {
                         let sig_val_map = info.map_val(program_text);
                         let sig_direct_map = info.map_direct(program_text);
                         let name = program_text.get_text(cmd);
                         match (sig_direct_map.get(name), sig_val_map.get(name)) {
-                            (Some(Signature::Direct { signature, .. }), _) => {
-                                let pos_declaration = signature.span;
-                                (Visibility::Direct, Some(pos_declaration))
+                            (Some(Signature::Direct { var, signature, .. }), _) => {
+                                (Visibility::Direct, Some(var.span), Some(signature.span))
                             }
-                            (None, Some(Signature::Val { signature, .. })) => {
-                                let pos_declaration = signature.span;
-                                (Visibility::Public, Some(pos_declaration))
+                            (None, Some(Signature::Val { var, signature, .. })) => {
+                                (Visibility::Public, Some(var.span), Some(signature.span))
                             }
-                            _ => (Visibility::Private, None),
+                            _ => (Visibility::Private, None, None),
                         }
                     } else {
-                        (Visibility::Public, None)
+                        (Visibility::Public, None, None)
                     }
                 };
+                let body = ComponentBody::InlineCmd { type_declaration };
                 vec![Component {
                     name,
                     body,
@@ -662,7 +669,6 @@ impl Component {
 
             Statement::LetBlock { cmd, expr, .. } => {
                 let name = program_text.get_text(cmd).to_owned();
-                let body = ComponentBody::BlockCmd;
                 let start = expr.span.end;
                 let end = if let Some(info) = module_info {
                     info.module_span.end
@@ -671,24 +677,24 @@ impl Component {
                 };
                 let scope = Span { start, end };
                 let pos_definition = cmd.span;
-                let (visibility, pos_declaration) = if let Some(info) = module_info {
-                    let sig_val_map = info.map_val(program_text);
-                    let sig_direct_map = info.map_direct(program_text);
-                    let name = program_text.get_text(cmd);
-                    match (sig_direct_map.get(name), sig_val_map.get(name)) {
-                        (Some(Signature::Direct { signature, .. }), _) => {
-                            let pos_declaration = signature.span;
-                            (Visibility::Direct, Some(pos_declaration))
+                let (visibility, pos_declaration, type_declaration) =
+                    if let Some(info) = module_info {
+                        let sig_val_map = info.map_val(program_text);
+                        let sig_direct_map = info.map_direct(program_text);
+                        let name = program_text.get_text(cmd);
+                        match (sig_direct_map.get(name), sig_val_map.get(name)) {
+                            (Some(Signature::Direct { var, signature, .. }), _) => {
+                                (Visibility::Direct, Some(var.span), Some(signature.span))
+                            }
+                            (None, Some(Signature::Val { var, signature, .. })) => {
+                                (Visibility::Public, Some(var.span), Some(signature.span))
+                            }
+                            _ => (Visibility::Private, None, None),
                         }
-                        (None, Some(Signature::Val { signature, .. })) => {
-                            let pos_declaration = signature.span;
-                            (Visibility::Public, Some(pos_declaration))
-                        }
-                        _ => (Visibility::Private, None),
-                    }
-                } else {
-                    (Visibility::Public, None)
-                };
+                    } else {
+                        (Visibility::Public, None, None)
+                    };
+                let body = ComponentBody::BlockCmd { type_declaration };
                 vec![Component {
                     name,
                     body,
@@ -702,7 +708,6 @@ impl Component {
 
             Statement::LetMath { cmd, expr, .. } => {
                 let name = program_text.get_text(cmd).to_owned();
-                let body = ComponentBody::MathCmd;
                 let start = expr.span.end;
                 let end = if let Some(info) = module_info {
                     info.module_span.end
@@ -711,26 +716,25 @@ impl Component {
                 };
                 let scope = Span { start, end };
                 let pos_definition = cmd.span;
-                let (visibility, pos_declaration) = {
+                let (visibility, pos_declaration, type_declaration) = {
                     if let Some(info) = module_info {
                         let sig_val_map = info.map_val(program_text);
                         let sig_direct_map = info.map_direct(program_text);
                         let name = program_text.get_text(cmd);
                         match (sig_direct_map.get(name), sig_val_map.get(name)) {
-                            (Some(Signature::Direct { signature, .. }), _) => {
-                                let pos_declaration = signature.span;
-                                (Visibility::Direct, Some(pos_declaration))
+                            (Some(Signature::Direct { var, signature, .. }), _) => {
+                                (Visibility::Direct, Some(var.span), Some(signature.span))
                             }
-                            (None, Some(Signature::Val { signature, .. })) => {
-                                let pos_declaration = signature.span;
-                                (Visibility::Public, Some(pos_declaration))
+                            (None, Some(Signature::Val { var, signature, .. })) => {
+                                (Visibility::Public, Some(var.span), Some(signature.span))
                             }
-                            _ => (Visibility::Private, None),
+                            _ => (Visibility::Private, None, None),
                         }
                     } else {
-                        (Visibility::Public, None)
+                        (Visibility::Public, None, None)
                     }
                 };
+                let body = ComponentBody::MathCmd { type_declaration };
                 vec![Component {
                     name,
                     body,
@@ -904,7 +908,7 @@ pub enum ComponentBody {
         components: Vec<Component>,
     },
     Variable {
-        /// let 式に型情報を書いている場合、その場所。
+        /// let 式や signature に型情報を書いている場合、その場所。
         type_declaration: Option<Span>,
     },
     Type,
@@ -912,9 +916,18 @@ pub enum ComponentBody {
         /// その Variant が属する型の名前。
         type_name: String,
     },
-    InlineCmd,
-    BlockCmd,
-    MathCmd,
+    InlineCmd {
+        /// signature に型情報がある場合、その場所。
+        type_declaration: Option<Span>,
+    },
+    BlockCmd {
+        /// signature に型情報がある場合、その場所。
+        type_declaration: Option<Span>,
+    },
+    MathCmd {
+        /// signature に型情報がある場合、その場所。
+        type_declaration: Option<Span>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

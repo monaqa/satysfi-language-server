@@ -3,151 +3,18 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use log::info;
 use lspower::lsp::{
-    CompletionItem, CompletionResponse, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
+    CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat,
+    MarkupContent, MarkupKind,
 };
 use satysfi_parser::Mode;
 use serde::Deserialize;
 
 use crate::{
-    documents::{DocumentCache, DocumentData, Visibility},
+    documents::{ComponentBody, DocumentCache, DocumentData, Visibility},
     util::{ConvertPosition, UrlPos},
 };
 
 pub const COMPLETION_RESOUCES: &str = include_str!("../resource/completion_items.toml");
-
-// pub fn get_completion_list(
-//     doc_data: &DocumentData,
-//     url: &Url,
-//     pos: &Position,
-// ) -> Option<CompletionResponse> {
-//     match doc_data {
-//         DocumentData::Parsed {
-//             program_text: csttext,
-//             ..
-//         } => {
-//             let pos_usize = csttext.from_position(pos)?;
-//             if csttext.is_comment(pos_usize) {
-//                 return None;
-//             }
-//             let mode = csttext.cst.mode(pos_usize);
-//             info!("{:?}", mode);
-//             match mode {
-//                 Mode::Program => {
-//                     let mut items = vec![];
-//                     items.extend(get_variable_list(doc_data, url, pos));
-//                     items.extend(get_primitive_list());
-//                     Some(CompletionResponse::List(CompletionList {
-//                         is_incomplete: false,
-//                         items,
-//                     }))
-//                 }
-//                 Mode::Horizontal => {
-//                     let items = get_inline_cmd_list(doc_data, url, pos);
-//                     Some(CompletionResponse::List(CompletionList {
-//                         is_incomplete: false,
-//                         items,
-//                     }))
-//                 }
-//                 Mode::Vertical => {
-//                     let items = get_block_cmd_list(doc_data, url, pos);
-//                     Some(CompletionResponse::List(CompletionList {
-//                         is_incomplete: false,
-//                         items,
-//                     }))
-//                 }
-//                 _ => None,
-//             }
-//         }
-//         DocumentData::NotParsed { .. } => None,
-//     }
-// }
-//
-// pub fn get_variable_list(
-//     doc_data: &DocumentData,
-//     url: &Url,
-//     pos: &Position,
-// ) -> Vec<CompletionItem> {
-//     match doc_data {
-//         DocumentData::Parsed {
-//             program_text: csttext,
-//             environment,
-//         } => {
-//             if let Some(pos_usize) = csttext.from_position(pos) {
-//                 // TODO: 依存パッケージを遡って検索
-//                 environment
-//                     .variables()
-//                     .iter()
-//                     .filter(|var| var.scope.includes(pos_usize))
-//                     .map(|var| {
-//                         CompletionItem::new_simple(var.name.clone(), "in this file".to_owned())
-//                     })
-//                     .collect()
-//             } else {
-//                 vec![]
-//             }
-//         }
-//         DocumentData::NotParsed { .. } => vec![],
-//     }
-// }
-//
-// pub fn get_inline_cmd_list(
-//     doc_data: &DocumentData,
-//     url: &Url,
-//     pos: &Position,
-// ) -> Vec<CompletionItem> {
-//     match doc_data {
-//         DocumentData::Parsed {
-//             program_text: csttext,
-//             environment,
-//         } => {
-//             if let Some(pos_usize) = csttext.from_position(pos) {
-//                 // TODO: 依存パッケージを遡って検索
-//                 environment
-//                     .inline_cmds()
-//                     .iter()
-//                     .filter(|cmd| cmd.scope.includes(pos_usize))
-//                     .map(|cmd| {
-//                         CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
-//                     })
-//                     .collect()
-//             } else {
-//                 vec![]
-//             }
-//         }
-//         DocumentData::NotParsed { .. } => vec![],
-//     }
-// }
-//
-// pub fn get_block_cmd_list(
-//     doc_data: &DocumentData,
-//     url: &Url,
-//     pos: &Position,
-// ) -> Vec<CompletionItem> {
-//     match doc_data {
-//         DocumentData::Parsed {
-//             program_text: csttext,
-//             environment,
-//         } => {
-//             let pos_usize = csttext.from_line_col(pos.line as usize, pos.character as usize);
-//             if let Some(pos_usize) =
-//                 csttext.from_line_col(pos.line as usize, pos.character as usize)
-//             {
-//                 // TODO: 依存パッケージを遡って検索
-//                 environment
-//                     .block_cmds()
-//                     .iter()
-//                     .filter(|cmd| cmd.scope.includes(pos_usize))
-//                     .map(|cmd| {
-//                         CompletionItem::new_simple(cmd.name.clone(), "in this file".to_owned())
-//                     })
-//                     .collect()
-//             } else {
-//                 vec![]
-//             }
-//         }
-//         DocumentData::NotParsed { .. } => vec![],
-//     }
-// }
 
 pub fn get_primitive_list() -> Vec<CompletionItem> {
     let resources = get_resouce_items();
@@ -257,7 +124,7 @@ impl DocumentCache {
                 .iter()
                 .filter(|var| var.scope.includes(pos_usize))
                 .map(|var| {
-                    CompletionItem::new_simple(
+                    variable_completion_item(
                         var.name.clone(),
                         "variable defined in this file".to_owned(),
                     )
@@ -279,9 +146,9 @@ impl DocumentCache {
                             .variables_external(&[])
                             .iter()
                             .map(|var| {
-                                CompletionItem::new_simple(
+                                variable_completion_item(
                                     var.name.clone(),
-                                    format!("variable defined in package '{}'", dep.name),
+                                    format!("variable defined in package `{}`", dep.name),
                                 )
                             })
                             .collect_vec()
@@ -317,9 +184,18 @@ impl DocumentCache {
                 .iter()
                 .filter(|var| var.scope.includes(pos_usize))
                 .map(|cmd| {
-                    CompletionItem::new_simple(
+                    command_completion_item(
                         cmd.name.clone(),
                         "inline-cmd defined in this file".to_owned(),
+                        if let ComponentBody::InlineCmd {
+                            type_declaration: Some(span),
+                        } = cmd.body
+                        {
+                            self.get_text_from_span(&cmd.url, span)
+                                .map(|s| s.to_owned())
+                        } else {
+                            None
+                        },
                     )
                 })
                 .collect_vec();
@@ -341,9 +217,18 @@ impl DocumentCache {
                                 matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
                             })
                             .map(|cmd| {
-                                CompletionItem::new_simple(
+                                command_completion_item(
                                     cmd.name.clone(),
-                                    format!("inline-cmd defined in package '{}'", dep.name),
+                                    "inline-cmd defined in this file".to_owned(),
+                                    if let ComponentBody::InlineCmd {
+                                        type_declaration: Some(span),
+                                    } = cmd.body
+                                    {
+                                        self.get_text_from_span(&cmd.url, span)
+                                            .map(|s| s.to_owned())
+                                    } else {
+                                        None
+                                    },
                                 )
                             })
                             .collect_vec()
@@ -377,9 +262,18 @@ impl DocumentCache {
                 .iter()
                 .filter(|var| var.scope.includes(pos_usize))
                 .map(|cmd| {
-                    CompletionItem::new_simple(
+                    command_completion_item(
                         cmd.name.clone(),
                         "block-cmd defined in this file".to_owned(),
+                        if let ComponentBody::BlockCmd {
+                            type_declaration: Some(span),
+                        } = cmd.body
+                        {
+                            self.get_text_from_span(&cmd.url, span)
+                                .map(|s| s.to_owned())
+                        } else {
+                            None
+                        },
                     )
                 })
                 .collect_vec();
@@ -401,9 +295,18 @@ impl DocumentCache {
                                 matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
                             })
                             .map(|cmd| {
-                                CompletionItem::new_simple(
+                                command_completion_item(
                                     cmd.name.clone(),
-                                    format!("block-cmd defined in package '{}'", dep.name),
+                                    "block-cmd defined in this file".to_owned(),
+                                    if let ComponentBody::BlockCmd {
+                                        type_declaration: Some(span),
+                                    } = cmd.body
+                                    {
+                                        self.get_text_from_span(&cmd.url, span)
+                                            .map(|s| s.to_owned())
+                                    } else {
+                                        None
+                                    },
                                 )
                             })
                             .collect_vec()
@@ -437,9 +340,18 @@ impl DocumentCache {
                 .iter()
                 .filter(|var| var.scope.includes(pos_usize))
                 .map(|cmd| {
-                    CompletionItem::new_simple(
+                    command_completion_item(
                         cmd.name.clone(),
                         "math-cmd defined in this file".to_owned(),
+                        if let ComponentBody::MathCmd {
+                            type_declaration: Some(span),
+                        } = cmd.body
+                        {
+                            self.get_text_from_span(&cmd.url, span)
+                                .map(|s| s.to_owned())
+                        } else {
+                            None
+                        },
                     )
                 })
                 .collect_vec();
@@ -461,9 +373,18 @@ impl DocumentCache {
                                 matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
                             })
                             .map(|cmd| {
-                                CompletionItem::new_simple(
+                                command_completion_item(
                                     cmd.name.clone(),
-                                    format!("math-cmd defined in package '{}'", dep.name),
+                                    "math-cmd defined in this file".to_owned(),
+                                    if let ComponentBody::MathCmd {
+                                        type_declaration: Some(span),
+                                    } = cmd.body
+                                    {
+                                        self.get_text_from_span(&cmd.url, span)
+                                            .map(|s| s.to_owned())
+                                    } else {
+                                        None
+                                    },
                                 )
                             })
                             .collect_vec()
@@ -477,5 +398,57 @@ impl DocumentCache {
         } else {
             vec![]
         }
+    }
+}
+
+fn variable_completion_item(name: String, desc: String) -> CompletionItem {
+    CompletionItem {
+        label: name,
+        kind: Some(CompletionItemKind::Function),
+        detail: None,
+        documentation: Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: desc,
+        })),
+        deprecated: None,
+        preselect: None,
+        sort_text: None,
+        filter_text: None,
+        insert_text: None,
+        insert_text_format: None,
+        insert_text_mode: None,
+        text_edit: None,
+        additional_text_edits: None,
+        command: None,
+        data: None,
+        tags: None,
+    }
+}
+
+fn command_completion_item(
+    name: String,
+    desc: String,
+    type_declaration: Option<String>,
+) -> CompletionItem {
+    CompletionItem {
+        label: name,
+        kind: Some(CompletionItemKind::Variable),
+        detail: type_declaration,
+        documentation: Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: desc,
+        })),
+        deprecated: None,
+        preselect: None,
+        sort_text: None,
+        filter_text: None,
+        insert_text: None,
+        insert_text_format: None,
+        insert_text_mode: None,
+        text_edit: None,
+        additional_text_edits: None,
+        command: None,
+        data: None,
+        tags: None,
     }
 }

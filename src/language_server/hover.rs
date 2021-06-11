@@ -22,10 +22,10 @@ impl DocumentCache {
                 }
                 ComponentBody::Variable { type_declaration } => {
                     let mut v = vec![MarkedString::String("variable".to_owned())];
-                    if let Some(dec) = type_declaration {
+                    if let Some(span) = type_declaration {
                         v.push(MarkedString::LanguageString(LanguageString {
                             language: "satysfi".to_owned(),
-                            value: program_text.get_text_from_span(*dec).to_owned(),
+                            value: self.get_text_from_span(&component.url, *span)?.to_owned(),
                         }));
                     }
                     v
@@ -39,14 +39,35 @@ impl DocumentCache {
                         type_name
                     ))]
                 }
-                ComponentBody::InlineCmd => {
-                    vec![MarkedString::String("inline command".to_owned())]
+                ComponentBody::InlineCmd { type_declaration } => {
+                    let mut v = vec![MarkedString::String("inline command".to_owned())];
+                    if let Some(span) = type_declaration {
+                        v.push(MarkedString::LanguageString(LanguageString {
+                            language: "satysfi".to_owned(),
+                            value: self.get_text_from_span(&component.url, *span)?.to_owned(),
+                        }))
+                    }
+                    v
                 }
-                ComponentBody::BlockCmd => {
-                    vec![MarkedString::String("block command".to_owned())]
+                ComponentBody::BlockCmd { type_declaration } => {
+                    let mut v = vec![MarkedString::String("block command".to_owned())];
+                    if let Some(span) = type_declaration {
+                        v.push(MarkedString::LanguageString(LanguageString {
+                            language: "satysfi".to_owned(),
+                            value: self.get_text_from_span(&component.url, *span)?.to_owned(),
+                        }))
+                    }
+                    v
                 }
-                ComponentBody::MathCmd => {
-                    vec![MarkedString::String("math command".to_owned())]
+                ComponentBody::MathCmd { type_declaration } => {
+                    let mut v = vec![MarkedString::String("math command".to_owned())];
+                    if let Some(span) = type_declaration {
+                        v.push(MarkedString::LanguageString(LanguageString {
+                            language: "satysfi".to_owned(),
+                            value: self.get_text_from_span(&component.url, *span)?.to_owned(),
+                        }))
+                    }
+                    v
                 }
             };
 

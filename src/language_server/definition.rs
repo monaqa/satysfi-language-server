@@ -105,15 +105,9 @@ impl DocumentCache {
                     });
                     local.or(deps)
                 }
-                Rule::type_name => {
-                    todo!();
-                }
-                Rule::variant_name => {
-                    todo!();
-                }
-                Rule::module_name => {
-                    todo!();
-                }
+                Rule::type_name => None,
+                Rule::variant_name => None,
+                Rule::module_name => None,
                 Rule::inline_cmd_name => {
                     // カーソルがスコープ内にあって、かつ名前の一致するもの
                     let local = environment
@@ -139,10 +133,52 @@ impl DocumentCache {
                     local.or(deps)
                 }
                 Rule::block_cmd_name => {
-                    todo!();
+                    // カーソルがスコープ内にあって、かつ名前の一致するもの
+                    let local = environment
+                        .block_cmds_external(&[])
+                        .into_iter()
+                        .find(|&cmd| cmd.scope.includes(pos_usize) && cmd.name == name);
+
+                    // dependency 内にある public な変数で、名前が一致するもの
+                    let deps = environment.dependencies().iter().find_map(|dep| {
+                        if let Some(DocumentData::Parsed {
+                            environment: env_dep,
+                            ..
+                        }) = dep.url.as_ref().and_then(|url| self.get(url))
+                        {
+                            env_dep
+                                .block_cmds_external(&[])
+                                .into_iter()
+                                .find(|&cmd| cmd.name == name)
+                        } else {
+                            None
+                        }
+                    });
+                    local.or(deps)
                 }
                 Rule::math_cmd_name => {
-                    todo!();
+                    // カーソルがスコープ内にあって、かつ名前の一致するもの
+                    let local = environment
+                        .math_cmds_external(&[])
+                        .into_iter()
+                        .find(|&cmd| cmd.scope.includes(pos_usize) && cmd.name == name);
+
+                    // dependency 内にある public な変数で、名前が一致するもの
+                    let deps = environment.dependencies().iter().find_map(|dep| {
+                        if let Some(DocumentData::Parsed {
+                            environment: env_dep,
+                            ..
+                        }) = dep.url.as_ref().and_then(|url| self.get(url))
+                        {
+                            env_dep
+                                .math_cmds_external(&[])
+                                .into_iter()
+                                .find(|&cmd| cmd.name == name)
+                        } else {
+                            None
+                        }
+                    });
+                    local.or(deps)
                 }
                 _ => unreachable!(),
             };
