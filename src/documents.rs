@@ -8,6 +8,7 @@ use itertools::Itertools;
 use log::info;
 use lspower::lsp::Url;
 use satysfi_parser::{
+    grammar::{type_block_cmd, type_inline_cmd, type_math_cmd},
     structure::{Header, LetRecInner, Program, ProgramText, Signature, Statement, TypeInner},
     Cst, LineCol, Rule, Span,
 };
@@ -678,17 +679,17 @@ impl Component {
                     Span { start, end }
                 };
                 let pos_definition = cmd.span;
-                let (visibility, pos_declaration, type_declaration) = {
+                let (visibility, pos_declaration, signature) = {
                     if let Some(info) = module_info {
                         let sig_val_map = info.map_val(program_text);
                         let sig_direct_map = info.map_direct(program_text);
                         let name = program_text.get_text(cmd);
                         match (sig_direct_map.get(name), sig_val_map.get(name)) {
                             (Some(Signature::Direct { var, signature, .. }), _) => {
-                                (Visibility::Direct, Some(var.span), Some(signature.span))
+                                (Visibility::Direct, Some(var.span), Some(signature))
                             }
                             (None, Some(Signature::Val { var, signature, .. })) => {
-                                (Visibility::Public, Some(var.span), Some(signature.span))
+                                (Visibility::Public, Some(var.span), Some(signature))
                             }
                             _ => (Visibility::Private, None, None),
                         }
@@ -696,7 +697,23 @@ impl Component {
                         (Visibility::Public, None, None)
                     }
                 };
-                let body = ComponentBody::InlineCmd { type_declaration };
+                let body = if let Some(signature) = signature {
+                    let text = program_text.get_text(signature);
+                    let csts = type_inline_cmd(text).ok().unwrap().inner;
+                    ComponentBody::InlineCmd {
+                        type_declaration: Some(signature.span),
+                        type_args: csts
+                            .into_iter()
+                            .map(|cst| text[cst.span.start..cst.span.end].to_owned())
+                            .collect_vec(),
+                    }
+                } else {
+                    ComponentBody::InlineCmd {
+                        type_declaration: None,
+                        type_args: vec![],
+                    }
+                };
+                info!("{}: {:?}", name, body);
                 vec![Component {
                     name,
                     body,
@@ -718,24 +735,40 @@ impl Component {
                 };
                 let scope = Span { start, end };
                 let pos_definition = cmd.span;
-                let (visibility, pos_declaration, type_declaration) =
+                let (visibility, pos_declaration, signature) = {
                     if let Some(info) = module_info {
                         let sig_val_map = info.map_val(program_text);
                         let sig_direct_map = info.map_direct(program_text);
                         let name = program_text.get_text(cmd);
                         match (sig_direct_map.get(name), sig_val_map.get(name)) {
                             (Some(Signature::Direct { var, signature, .. }), _) => {
-                                (Visibility::Direct, Some(var.span), Some(signature.span))
+                                (Visibility::Direct, Some(var.span), Some(signature))
                             }
                             (None, Some(Signature::Val { var, signature, .. })) => {
-                                (Visibility::Public, Some(var.span), Some(signature.span))
+                                (Visibility::Public, Some(var.span), Some(signature))
                             }
                             _ => (Visibility::Private, None, None),
                         }
                     } else {
                         (Visibility::Public, None, None)
-                    };
-                let body = ComponentBody::BlockCmd { type_declaration };
+                    }
+                };
+                let body = if let Some(signature) = signature {
+                    let text = program_text.get_text(signature);
+                    let csts = type_block_cmd(text).ok().unwrap().inner;
+                    ComponentBody::BlockCmd {
+                        type_declaration: Some(signature.span),
+                        type_args: csts
+                            .into_iter()
+                            .map(|cst| text[cst.span.start..cst.span.end].to_owned())
+                            .collect_vec(),
+                    }
+                } else {
+                    ComponentBody::BlockCmd {
+                        type_declaration: None,
+                        type_args: vec![],
+                    }
+                };
                 vec![Component {
                     name,
                     body,
@@ -757,17 +790,17 @@ impl Component {
                 };
                 let scope = Span { start, end };
                 let pos_definition = cmd.span;
-                let (visibility, pos_declaration, type_declaration) = {
+                let (visibility, pos_declaration, signature) = {
                     if let Some(info) = module_info {
                         let sig_val_map = info.map_val(program_text);
                         let sig_direct_map = info.map_direct(program_text);
                         let name = program_text.get_text(cmd);
                         match (sig_direct_map.get(name), sig_val_map.get(name)) {
                             (Some(Signature::Direct { var, signature, .. }), _) => {
-                                (Visibility::Direct, Some(var.span), Some(signature.span))
+                                (Visibility::Direct, Some(var.span), Some(signature))
                             }
                             (None, Some(Signature::Val { var, signature, .. })) => {
-                                (Visibility::Public, Some(var.span), Some(signature.span))
+                                (Visibility::Public, Some(var.span), Some(signature))
                             }
                             _ => (Visibility::Private, None, None),
                         }
@@ -775,7 +808,22 @@ impl Component {
                         (Visibility::Public, None, None)
                     }
                 };
-                let body = ComponentBody::MathCmd { type_declaration };
+                let body = if let Some(signature) = signature {
+                    let text = program_text.get_text(signature);
+                    let csts = type_math_cmd(text).ok().unwrap().inner;
+                    ComponentBody::MathCmd {
+                        type_declaration: Some(signature.span),
+                        type_args: csts
+                            .into_iter()
+                            .map(|cst| text[cst.span.start..cst.span.end].to_owned())
+                            .collect_vec(),
+                    }
+                } else {
+                    ComponentBody::MathCmd {
+                        type_declaration: None,
+                        type_args: vec![],
+                    }
+                };
                 vec![Component {
                     name,
                     body,
@@ -960,14 +1008,17 @@ pub enum ComponentBody {
     InlineCmd {
         /// signature に型情報がある場合、その場所。
         type_declaration: Option<Span>,
+        type_args: Vec<String>,
     },
     BlockCmd {
         /// signature に型情報がある場合、その場所。
         type_declaration: Option<Span>,
+        type_args: Vec<String>,
     },
     MathCmd {
         /// signature に型情報がある場合、その場所。
         type_declaration: Option<Span>,
+        type_args: Vec<String>,
     },
 }
 

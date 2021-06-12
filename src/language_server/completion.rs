@@ -4,7 +4,7 @@ use itertools::Itertools;
 use log::info;
 use lspower::lsp::{
     CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind,
+    MarkupContent, MarkupKind, Url,
 };
 use satysfi_parser::Mode;
 use serde::Deserialize;
@@ -185,18 +185,11 @@ impl DocumentCache {
             .iter()
             .filter(|var| var.scope.includes(pos_usize))
             .map(|cmd| {
-                command_completion_item(
+                self.command_completion_item(
                     cmd.name.clone(),
                     "inline-cmd defined in this file".to_owned(),
-                    if let ComponentBody::InlineCmd {
-                        type_declaration: Some(span),
-                    } = cmd.body
-                    {
-                        self.get_text_from_span(&cmd.url, span)
-                            .map(|s| s.to_owned())
-                    } else {
-                        None
-                    },
+                    &cmd.body,
+                    &cmd.url,
                 )
             })
             .collect_vec();
@@ -218,18 +211,11 @@ impl DocumentCache {
                             matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
                         })
                         .map(|cmd| {
-                            command_completion_item(
+                            self.command_completion_item(
                                 cmd.name.clone(),
-                                "inline-cmd defined in this file".to_owned(),
-                                if let ComponentBody::InlineCmd {
-                                    type_declaration: Some(span),
-                                } = cmd.body
-                                {
-                                    self.get_text_from_span(&cmd.url, span)
-                                        .map(|s| s.to_owned())
-                                } else {
-                                    None
-                                },
+                                format!("inline-cmd defined in package `{}`", dep.name),
+                                &cmd.body,
+                                &cmd.url,
                             )
                         })
                         .collect_vec()
@@ -253,18 +239,11 @@ impl DocumentCache {
             .iter()
             .filter(|var| var.scope.includes(pos_usize))
             .map(|cmd| {
-                command_completion_item(
+                self.command_completion_item(
                     cmd.name.clone(),
                     "block-cmd defined in this file".to_owned(),
-                    if let ComponentBody::BlockCmd {
-                        type_declaration: Some(span),
-                    } = cmd.body
-                    {
-                        self.get_text_from_span(&cmd.url, span)
-                            .map(|s| s.to_owned())
-                    } else {
-                        None
-                    },
+                    &cmd.body,
+                    &cmd.url,
                 )
             })
             .collect_vec();
@@ -286,18 +265,11 @@ impl DocumentCache {
                             matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
                         })
                         .map(|cmd| {
-                            command_completion_item(
+                            self.command_completion_item(
                                 cmd.name.clone(),
-                                "block-cmd defined in this file".to_owned(),
-                                if let ComponentBody::BlockCmd {
-                                    type_declaration: Some(span),
-                                } = cmd.body
-                                {
-                                    self.get_text_from_span(&cmd.url, span)
-                                        .map(|s| s.to_owned())
-                                } else {
-                                    None
-                                },
+                                format!("block-cmd defined in package `{}`", dep.name),
+                                &cmd.body,
+                                &cmd.url,
                             )
                         })
                         .collect_vec()
@@ -321,18 +293,11 @@ impl DocumentCache {
             .iter()
             .filter(|var| var.scope.includes(pos_usize))
             .map(|cmd| {
-                command_completion_item(
+                self.command_completion_item(
                     cmd.name.clone(),
                     "math-cmd defined in this file".to_owned(),
-                    if let ComponentBody::MathCmd {
-                        type_declaration: Some(span),
-                    } = cmd.body
-                    {
-                        self.get_text_from_span(&cmd.url, span)
-                            .map(|s| s.to_owned())
-                    } else {
-                        None
-                    },
+                    &cmd.body,
+                    &cmd.url,
                 )
             })
             .collect_vec();
@@ -354,18 +319,11 @@ impl DocumentCache {
                             matches!(cmd.visibility, Visibility::Public | Visibility::Direct)
                         })
                         .map(|cmd| {
-                            command_completion_item(
+                            self.command_completion_item(
                                 cmd.name.clone(),
-                                "math-cmd defined in this file".to_owned(),
-                                if let ComponentBody::MathCmd {
-                                    type_declaration: Some(span),
-                                } = cmd.body
-                                {
-                                    self.get_text_from_span(&cmd.url, span)
-                                        .map(|s| s.to_owned())
-                                } else {
-                                    None
-                                },
+                                format!("math-cmd defined in package `{}`", dep.name),
+                                &cmd.body,
+                                &cmd.url,
                             )
                         })
                         .collect_vec()
@@ -376,6 +334,63 @@ impl DocumentCache {
             .concat();
 
         Some([local_commands, deps_commands].concat())
+    }
+
+    fn command_completion_item(
+        &self,
+        name: String,
+        desc: String,
+        body: &ComponentBody,
+        url: &Url,
+    ) -> CompletionItem {
+        let (detail, insert_text, insert_text_format) = match body {
+            ComponentBody::InlineCmd {
+                type_declaration: Some(dec),
+                type_args,
+            } => (
+                self.get_text_from_span(url, *dec).map(|s| s.to_owned()),
+                Some(form_command_text_snippet(&name, type_args)),
+                Some(InsertTextFormat::Snippet),
+            ),
+            ComponentBody::BlockCmd {
+                type_declaration: Some(dec),
+                type_args,
+            } => (
+                self.get_text_from_span(url, *dec).map(|s| s.to_owned()),
+                Some(form_command_text_snippet(&name, type_args)),
+                Some(InsertTextFormat::Snippet),
+            ),
+            ComponentBody::MathCmd {
+                type_declaration: Some(dec),
+                ..
+            } => (
+                self.get_text_from_span(url, *dec).map(|s| s.to_owned()),
+                None,
+                None,
+            ),
+            _ => (None, None, None),
+        };
+        CompletionItem {
+            label: name,
+            kind: Some(CompletionItemKind::Variable),
+            detail,
+            documentation: Some(Documentation::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: desc,
+            })),
+            deprecated: None,
+            preselect: None,
+            sort_text: None,
+            filter_text: None,
+            insert_text,
+            insert_text_format,
+            insert_text_mode: None,
+            text_edit: None,
+            additional_text_edits: None,
+            command: None,
+            data: None,
+            tags: None,
+        }
     }
 }
 
@@ -407,30 +422,102 @@ fn variable_completion_item(
     }
 }
 
-fn command_completion_item(
-    name: String,
-    desc: String,
-    type_declaration: Option<String>,
-) -> CompletionItem {
-    CompletionItem {
-        label: name,
-        kind: Some(CompletionItemKind::Variable),
-        detail: type_declaration,
-        documentation: Some(Documentation::MarkupContent(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: desc,
-        })),
-        deprecated: None,
-        preselect: None,
-        sort_text: None,
-        filter_text: None,
-        insert_text: None,
-        insert_text_format: None,
-        insert_text_mode: None,
-        text_edit: None,
-        additional_text_edits: None,
-        command: None,
-        data: None,
-        tags: None,
+/// コマンド名と型情報からコマンドのスニペットを自動生成する。
+fn form_command_text_snippet(name: &str, type_args: &[String]) -> String {
+    let args_str = type_args.iter().map(|arg| ArgType::from_str(arg.as_str()));
+
+    let mut snips = vec![];
+
+    let mut require_semicolon = true;
+    let mut compactible = true;
+    for (idx, arg) in args_str.enumerate().rev() {
+        if !arg.is_compactible() {
+            compactible = false;
+        }
+        snips.push(arg.as_snippet(idx + 1, compactible));
+        if compactible {
+            require_semicolon = false;
+        }
+    }
+
+    snips.reverse();
+
+    format!(
+        "{name}{args}{semicolon}$0",
+        name = name,
+        args = snips.into_iter().join(""),
+        semicolon = if require_semicolon { ";" } else { "" }
+    )
+}
+
+struct ArgType<'a> {
+    name: &'a str,
+    optional: bool,
+}
+
+impl<'a> ArgType<'a> {
+    fn as_snippet(&self, idx: usize, short: bool) -> String {
+        if self.optional {
+            let name = self.name;
+            if name.len() > 5 && &name[name.len() - 4..] == "list" {
+                return format!("${{{}:?:[]}}", idx);
+            }
+            return format!("${{{}:?:()}}", idx);
+        }
+        match self.name {
+            "inline-text" => {
+                if short {
+                    format!("{{${}}}", idx)
+                } else {
+                    format!("({{${}}})", idx)
+                }
+            }
+            "inline-text list" => {
+                if short {
+                    format!("{{|${}|}}", idx)
+                } else {
+                    format!("({{|${}|}})", idx)
+                }
+            }
+            "itemize" => {
+                if short {
+                    format!("{{\n  * ${}\n}}", idx)
+                } else {
+                    format!("({{* ${}}})", idx)
+                }
+            }
+            "block-text" => {
+                if short {
+                    format!("<\n  ${}\n>", idx)
+                } else {
+                    format!("('<${}>)", idx)
+                }
+            }
+            s if s.len() > 5 && &s[s.len() - 4..] == "list" => format!("[${}]", idx),
+            _ => format!("(${})", idx),
+        }
+    }
+
+    fn from_str(text: &'a str) -> Self {
+        let text = text.trim();
+        if let Some('?') = text.chars().last() {
+            ArgType {
+                name: &text[..text.len() - 1].trim(),
+                optional: true,
+            }
+        } else {
+            ArgType {
+                name: text,
+                optional: false,
+            }
+        }
+    }
+
+    fn is_compactible(&self) -> bool {
+        !self.optional
+            && matches!(
+                self.name,
+                "inline-text" | "inline-text list" | "itemize" | "block-text"
+            )
     }
 }

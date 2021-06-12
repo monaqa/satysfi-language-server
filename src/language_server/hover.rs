@@ -39,7 +39,9 @@ impl DocumentCache {
                         type_name
                     ))]
                 }
-                ComponentBody::InlineCmd { type_declaration } => {
+                ComponentBody::InlineCmd {
+                    type_declaration, ..
+                } => {
                     let mut v = vec![MarkedString::String("inline command".to_owned())];
                     if let Some(span) = type_declaration {
                         v.push(MarkedString::LanguageString(LanguageString {
@@ -49,7 +51,9 @@ impl DocumentCache {
                     }
                     v
                 }
-                ComponentBody::BlockCmd { type_declaration } => {
+                ComponentBody::BlockCmd {
+                    type_declaration, ..
+                } => {
                     let mut v = vec![MarkedString::String("block command".to_owned())];
                     if let Some(span) = type_declaration {
                         v.push(MarkedString::LanguageString(LanguageString {
@@ -59,7 +63,9 @@ impl DocumentCache {
                     }
                     v
                 }
-                ComponentBody::MathCmd { type_declaration } => {
+                ComponentBody::MathCmd {
+                    type_declaration, ..
+                } => {
                     let mut v = vec![MarkedString::String("math command".to_owned())];
                     if let Some(span) = type_declaration {
                         v.push(MarkedString::LanguageString(LanguageString {
