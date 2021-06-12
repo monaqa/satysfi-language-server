@@ -21,6 +21,18 @@ impl DocumentCache {
         self.0.get(url)
     }
 
+    pub fn get_doc_info(&self, url: &Url) -> Option<(&ProgramText, &Environment)> {
+        if let Some(DocumentData::Parsed {
+            program_text,
+            environment,
+        }) = self.get(url)
+        {
+            Some((program_text, environment))
+        } else {
+            None
+        }
+    }
+
     pub fn get_text_from_span<'a>(&'a self, url: &Url, span: Span) -> Option<&'a str> {
         let doc = self.0.get(url)?;
         if let DocumentData::Parsed { program_text, .. } = doc {
@@ -154,6 +166,32 @@ impl DocumentData {
             DocumentData::NotParsed { .. } => {}
         }
     }
+
+    /// その position において、 Open している module 名の一覧を表示する。
+    pub fn get_open_modules(&self, pos: usize) -> Vec<String> {
+        match self {
+            DocumentData::Parsed {
+                program_text,
+                environment,
+            } => {
+                let open_stmts = environment
+                    .open_modules
+                    .iter()
+                    .filter(|opmod| opmod.scope.includes(pos))
+                    .map(|opmod| opmod.name.clone());
+                let csts = program_text.cst.dig(pos);
+                let binded_open_stmts = csts
+                    .iter()
+                    .filter(|&cst| {
+                        cst.rule == Rule::bind_stmt
+                            && cst.inner.get(0).unwrap().rule == Rule::open_stmt
+                    })
+                    .map(|cst| program_text.get_text(cst).to_owned());
+                binded_open_stmts.chain(open_stmts).collect()
+            }
+            DocumentData::NotParsed { .. } => vec![],
+        }
+    }
 }
 
 /// 変数やコマンドに関する情報。
@@ -161,6 +199,7 @@ impl DocumentData {
 pub struct Environment {
     dependencies: Vec<Dependency>,
     components: Vec<Component>,
+    open_modules: Vec<OpenModule>,
 }
 
 impl Environment {
@@ -179,9 +218,11 @@ impl Environment {
                 let preamble = preamble.iter().collect_vec();
                 let dependencies = Dependency::from_header(&header, program_text, url);
                 let components = Component::from_preamble(&preamble, program_text, url);
+                let open_modules = OpenModule::from_preamble(&preamble, program_text, url);
                 Environment {
                     dependencies,
                     components,
+                    open_modules,
                 }
             }
             Err(_) => Environment::default(),
@@ -242,12 +283,12 @@ impl Environment {
             .collect_vec()
     }
 
-    pub fn variables_external(&self, module_open: &[String]) -> Vec<&Component> {
+    pub fn variables_external(&self, open_modules: &[String]) -> Vec<&Component> {
         let local = self.variables();
         let in_mods = self
             .modules()
             .iter()
-            .filter(|&module| module_open.contains(&module.name))
+            .filter(|&module| open_modules.contains(&module.name))
             .map(|module| match &module.body {
                 ComponentBody::Module { components } => components
                     .iter()
@@ -260,12 +301,12 @@ impl Environment {
         [local, in_mods].concat()
     }
 
-    pub fn types_external(&self, module_open: &[String]) -> Vec<&Component> {
+    pub fn types_external(&self, open_modules: &[String]) -> Vec<&Component> {
         let local = self.types();
         let in_mods = self
             .modules()
             .iter()
-            .filter(|&module| module_open.contains(&module.name))
+            .filter(|&module| open_modules.contains(&module.name))
             .map(|module| match &module.body {
                 ComponentBody::Module { components } => components
                     .iter()
@@ -278,7 +319,7 @@ impl Environment {
         [local, in_mods].concat()
     }
 
-    pub fn variants_external(&self, module_open: &[String]) -> Vec<&Component> {
+    pub fn variants_external(&self, open_modules: &[String]) -> Vec<&Component> {
         let local = self.variants();
         let in_mods = self
             .modules()
@@ -295,13 +336,13 @@ impl Environment {
         [local, in_mods].concat()
     }
 
-    pub fn inline_cmds_external(&self, module_open: &[String]) -> Vec<&Component> {
+    pub fn inline_cmds_external(&self, open_modules: &[String]) -> Vec<&Component> {
         let local = self.inline_cmds();
 
         let in_mods = self
             .modules()
             .iter()
-            .filter(|&module| module_open.contains(&module.name))
+            .filter(|&module| open_modules.contains(&module.name))
             .map(|module| match &module.body {
                 ComponentBody::Module { components } => components
                     .iter()
@@ -328,13 +369,13 @@ impl Environment {
         [local, in_mods, in_mods_direct].concat()
     }
 
-    pub fn block_cmds_external(&self, module_open: &[String]) -> Vec<&Component> {
+    pub fn block_cmds_external(&self, open_modules: &[String]) -> Vec<&Component> {
         let local = self.block_cmds();
 
         let in_mods = self
             .modules()
             .iter()
-            .filter(|&module| module_open.contains(&module.name))
+            .filter(|&module| open_modules.contains(&module.name))
             .map(|module| match &module.body {
                 ComponentBody::Module { components } => components
                     .iter()
@@ -361,13 +402,13 @@ impl Environment {
         [local, in_mods, in_mods_direct].concat()
     }
 
-    pub fn math_cmds_external(&self, module_open: &[String]) -> Vec<&Component> {
+    pub fn math_cmds_external(&self, open_modules: &[String]) -> Vec<&Component> {
         let local = self.math_cmds();
 
         let in_mods = self
             .modules()
             .iter()
-            .filter(|&module| module_open.contains(&module.name))
+            .filter(|&module| open_modules.contains(&module.name))
             .map(|module| match &module.body {
                 ComponentBody::Module { components } => components
                     .iter()
@@ -940,5 +981,49 @@ pub enum Visibility {
 impl Default for Visibility {
     fn default() -> Self {
         Visibility::Public
+    }
+}
+
+#[derive(Debug)]
+pub struct OpenModule {
+    name: String,
+    scope: Span,
+    url: Url,
+}
+
+impl OpenModule {
+    fn from_preamble(
+        preamble: &[&Statement],
+        program_text: &ProgramText,
+        url: &Url,
+    ) -> Vec<OpenModule> {
+        preamble
+            .iter()
+            .filter_map(|stmt| OpenModule::from_stmt(stmt, None, program_text, url))
+            .collect_vec()
+    }
+
+    fn from_stmt(
+        stmt: &Statement,
+        module_info: Option<&ModuleInfo>,
+        program_text: &ProgramText,
+        url: &Url,
+    ) -> Option<OpenModule> {
+        if let Statement::Open(cst) = stmt {
+            let name = program_text.get_text(cst).to_owned();
+            let scope = {
+                let start = cst.span.end;
+                let end = if let Some(info) = module_info {
+                    info.module_span.end
+                } else {
+                    program_text.cst.span.end
+                };
+                Span { start, end }
+            };
+            let url = url.clone();
+            Some(OpenModule { name, scope, url })
+        } else {
+            None
+        }
     }
 }
