@@ -8,7 +8,6 @@ mod language_server;
 
 mod config;
 mod documents;
-mod primitive;
 mod util;
 
 pub use language_server::LanguageServer;
