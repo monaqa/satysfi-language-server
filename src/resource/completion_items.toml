@@ -50,6 +50,20 @@ detail = "math-cmd declaration (direct)"
 insert_text = 'direct \\${1:cmd-name} : [$0] math-cmd'
 insert_text_format = "snippet"
 
+[[statement]]
+label = "module"
+detail = "module definition"
+insert_text = """
+module ${1:ModName} : sig
+end = struct
+  $0
+end
+"""
+insert_text_format = "snippet"
+documentation = '''
+Define new module.
+'''
+
 [[primitive]]
 label = "inline-fil"
 detail = "inline-boxes"
