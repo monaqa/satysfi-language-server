@@ -390,6 +390,7 @@ impl DocumentCache {
             command: None,
             data: None,
             tags: None,
+            commit_characters: None,
         }
     }
 }
@@ -419,6 +420,7 @@ fn variable_completion_item(
         command: None,
         data: None,
         tags: None,
+        commit_characters: None,
     }
 }
 
