@@ -424,13 +424,17 @@ fn variable_completion_item(
 
 /// コマンド名と型情報からコマンドのスニペットを自動生成する。
 fn form_command_text_snippet(name: &str, type_args: &[String]) -> String {
-    let args_str = type_args.iter().map(|arg| ArgType::from_str(arg.as_str()));
+    let args_str = type_args
+        .iter()
+        .map(|arg| ArgType::from_str(arg.as_str()))
+        .filter(|arg| !arg.optional) // オプショナル引数はスニペットに含めない
+        .collect_vec(); // rev() を行うため一旦 Vec に格納
 
     let mut snips = vec![];
 
     let mut require_semicolon = true;
     let mut compactible = true;
-    for (idx, arg) in args_str.enumerate().rev() {
+    for (idx, arg) in args_str.iter().enumerate().rev() {
         if !arg.is_compactible() {
             compactible = false;
         }
@@ -441,6 +445,13 @@ fn form_command_text_snippet(name: &str, type_args: &[String]) -> String {
     }
 
     snips.reverse();
+
+    let name = if let Some("\\") = name.get(0..1) {
+        // `\` はスニペットの場合エスケープする必要がある
+        format!("\\{}", name)
+    } else {
+        name.to_owned()
+    };
 
     format!(
         "{name}{args}{semicolon}$0",
@@ -458,6 +469,7 @@ struct ArgType<'a> {
 impl<'a> ArgType<'a> {
     fn as_snippet(&self, idx: usize, short: bool) -> String {
         if self.optional {
+            // 今のところはこのコードは使わない（はず）だけど一応
             let name = self.name;
             if name.len() > 5 && &name[name.len() - 4..] == "list" {
                 return format!("${{{}:?:[]}}", idx);
