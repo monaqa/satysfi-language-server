@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{anyhow, Result};
@@ -478,30 +478,33 @@ impl Dependency {
         let mut deps = vec![];
         let home_path = std::env::var("HOME").map(PathBuf::from).ok();
         let file_path = url.to_file_path().ok();
+        let parent_path = file_path.as_ref().map(|p| p.parent().unwrap().to_owned());
 
         // require 系のパッケージの依存関係追加
-        if let Some(home_path) = home_path {
-            let dist_path = home_path.join(".satysfi/dist/packages");
-
-            let require_dependencies = require_packages.map(|pkg| {
-                let pkgname = program_text.get_text(pkg);
-                // TODO: consider satyg file
-                let pkg_path = dist_path.join(format!("{}.satyh", pkgname));
-                let url = if pkg_path.exists() {
-                    Url::from_file_path(pkg_path).ok()
-                } else {
-                    None
-                };
-                Dependency {
-                    name: pkgname.to_owned(),
-                    kind: DependencyKind::Require,
-                    definition: pkg.span,
-                    url,
+        let require_dependencies = require_packages.map(|pkg| {
+            let pkgname = program_text.get_text(pkg);
+            // TODO: consider satyg file
+            for pkgpath in
+                require_candidate_paths(pkgname, parent_path.as_deref(), home_path.as_deref())
+            {
+                if pkgpath.exists() {
+                    let url = Url::from_file_path(pkgpath).ok();
+                    return Dependency {
+                        name: pkgname.to_owned(),
+                        kind: DependencyKind::Require,
+                        definition: pkg.span,
+                        url,
+                    };
                 }
-            });
-
-            deps.extend(require_dependencies);
-        }
+            }
+            Dependency {
+                name: pkgname.to_owned(),
+                kind: DependencyKind::Require,
+                definition: pkg.span,
+                url: None,
+            }
+        });
+        deps.extend(require_dependencies);
 
         if let Some(file_path) = file_path {
             // TODO: add validate
@@ -529,6 +532,36 @@ impl Dependency {
 
         deps
     }
+}
+
+/// 以下の4箇所から探す。
+/// - $PARENT_PATH/.satysfi/{kind}/packages/a.{ext}
+/// - $HOME/.satysfi/{kind}/packages/a.{ext}
+/// - /usr/local/share/satysfi/{kind}/packages/a.{ext}
+/// - /usr/share/satysfi/{kind}/packages/a.{ext}
+/// kind: local, dist
+/// ext: satyh, satyg
+fn require_candidate_paths(
+    pkgname: &str,
+    parent: Option<&Path>,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
+    let usr_local_share = Some(PathBuf::from("/usr/local/share/satysfi"));
+    let usr_share = Some(PathBuf::from("/usr/share/satysfi"));
+    let home = home.map(|p| p.join(".satysfi"));
+    let parent = parent.map(|p| p.join(".satysfi"));
+    [parent, home, usr_local_share, usr_share]
+        .iter()
+        .filter_map(|x| x.clone())
+        .map(|path| {
+            vec![
+                path.join(format!("local/packages/{}.satyh", pkgname)),
+                path.join(format!("local/packages/{}.satyg", pkgname)),
+                path.join(format!("dist/packages/{}.satyh", pkgname)),
+                path.join(format!("dist/packages/{}.satyg", pkgname)),
+            ]
+        })
+        .concat()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
