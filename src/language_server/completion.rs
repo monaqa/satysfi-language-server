@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use log::info;
 use lspower::lsp::{
-    CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind, Url,
+    CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation,
+    InsertTextFormat, MarkupContent, MarkupKind, Position, Range, TextEdit, Url,
 };
 use satysfi_parser::Mode;
 use serde::Deserialize;
@@ -74,19 +74,21 @@ impl From<CompletionResourceItem> for CompletionItem {
 
 impl DocumentCache {
     pub fn get_completion_list(&self, curpos: &UrlPos) -> Option<CompletionResponse> {
+        let line_str = self.get_line(curpos);
+
         match self.get_mode(curpos) {
             Mode::Program => Some(CompletionResponse::Array(
                 self.get_completion_list_program(curpos)?,
             )),
             Mode::ProgramType => None,
             Mode::Vertical => Some(CompletionResponse::Array(
-                self.get_completion_list_vertical(curpos)?,
+                self.get_completion_list_vertical(curpos, line_str)?,
             )),
             Mode::Horizontal => Some(CompletionResponse::Array(
-                self.get_completion_list_horizontal(curpos)?,
+                self.get_completion_list_horizontal(curpos, line_str)?,
             )),
             Mode::Math => Some(CompletionResponse::Array(
-                self.get_completion_list_math(curpos)?,
+                self.get_completion_list_math(curpos, line_str)?,
             )),
             Mode::Header => None,
             Mode::Literal => None,
@@ -174,11 +176,18 @@ impl DocumentCache {
         Some([local_variables, deps_variables, primitives].concat())
     }
 
-    fn get_completion_list_horizontal(&self, curpos: &UrlPos) -> Option<Vec<CompletionItem>> {
+    fn get_completion_list_horizontal(
+        &self,
+        curpos: &UrlPos,
+        text: Option<&str>,
+    ) -> Option<Vec<CompletionItem>> {
         let UrlPos { url, pos } = curpos;
         let doc_data = self.get(url)?;
         let (program_text, environment) = self.get_doc_info(url)?;
         let pos_usize = program_text.from_position(pos)?;
+
+        // そのコマンドの開始位置（最後に出現した '\\'）を求める
+        let command_range = text.and_then(|text| Self::get_cmd_range(pos, text, 0x5c));
 
         let local_commands = environment
             .inline_cmds()
@@ -190,6 +199,7 @@ impl DocumentCache {
                     "inline-cmd defined in this file".to_owned(),
                     &cmd.body,
                     &cmd.url,
+                    command_range,
                 )
             })
             .collect_vec();
@@ -216,6 +226,7 @@ impl DocumentCache {
                                 format!("inline-cmd defined in package `{}`", dep.name),
                                 &cmd.body,
                                 &cmd.url,
+                                command_range,
                             )
                         })
                         .collect_vec()
@@ -228,11 +239,18 @@ impl DocumentCache {
         Some([local_commands, deps_commands].concat())
     }
 
-    fn get_completion_list_vertical(&self, curpos: &UrlPos) -> Option<Vec<CompletionItem>> {
+    fn get_completion_list_vertical(
+        &self,
+        curpos: &UrlPos,
+        text: Option<&str>,
+    ) -> Option<Vec<CompletionItem>> {
         let UrlPos { url, pos } = curpos;
         let doc_data = self.get(url)?;
         let (program_text, environment) = self.get_doc_info(url)?;
         let pos_usize = program_text.from_position(pos)?;
+
+        // そのコマンドの開始位置（最後に出現した '+'）を求める
+        let command_range = text.and_then(|text| Self::get_cmd_range(pos, text, 0x2b));
 
         let local_commands = environment
             .block_cmds()
@@ -244,6 +262,7 @@ impl DocumentCache {
                     "block-cmd defined in this file".to_owned(),
                     &cmd.body,
                     &cmd.url,
+                    command_range,
                 )
             })
             .collect_vec();
@@ -270,6 +289,7 @@ impl DocumentCache {
                                 format!("block-cmd defined in package `{}`", dep.name),
                                 &cmd.body,
                                 &cmd.url,
+                                command_range,
                             )
                         })
                         .collect_vec()
@@ -282,11 +302,18 @@ impl DocumentCache {
         Some([local_commands, deps_commands].concat())
     }
 
-    fn get_completion_list_math(&self, curpos: &UrlPos) -> Option<Vec<CompletionItem>> {
+    fn get_completion_list_math(
+        &self,
+        curpos: &UrlPos,
+        text: Option<&str>,
+    ) -> Option<Vec<CompletionItem>> {
         let UrlPos { url, pos } = curpos;
         let doc_data = self.get(url)?;
         let (program_text, environment) = self.get_doc_info(url)?;
         let pos_usize = program_text.from_position(pos)?;
+
+        // そのコマンドの開始位置（最後に出現した '\\'）を求める
+        let command_range = text.and_then(|text| Self::get_cmd_range(pos, text, 0x5c));
 
         let local_commands = environment
             .math_cmds()
@@ -298,6 +325,7 @@ impl DocumentCache {
                     "math-cmd defined in this file".to_owned(),
                     &cmd.body,
                     &cmd.url,
+                    command_range,
                 )
             })
             .collect_vec();
@@ -324,6 +352,7 @@ impl DocumentCache {
                                 format!("math-cmd defined in package `{}`", dep.name),
                                 &cmd.body,
                                 &cmd.url,
+                                command_range,
                             )
                         })
                         .collect_vec()
@@ -336,12 +365,29 @@ impl DocumentCache {
         Some([local_commands, deps_commands].concat())
     }
 
+    /// 現在補完しようとしている command の範囲を示す。
+    fn get_cmd_range(pos: &Position, text: &str, chr: u16) -> Option<Range> {
+        let utf16chars = text.encode_utf16().enumerate().collect_vec();
+        utf16chars
+            .into_iter()
+            .rev()
+            .find_map(|(idx, c)| if c == chr { Some(idx) } else { None })
+            .map(|pos_start| Range {
+                start: Position {
+                    line: pos.line,
+                    character: pos_start as u32,
+                },
+                end: *pos,
+            })
+    }
+
     fn command_completion_item(
         &self,
         name: String,
         desc: String,
         body: &ComponentBody,
         url: &Url,
+        cmd_range: Option<Range>,
     ) -> CompletionItem {
         let (detail, insert_text, insert_text_format) = match body {
             ComponentBody::InlineCmd {
@@ -370,6 +416,14 @@ impl DocumentCache {
             ),
             _ => (None, None, None),
         };
+
+        let text_edit = cmd_range.map(|range| {
+            CompletionTextEdit::Edit(TextEdit {
+                range,
+                new_text: insert_text.clone().unwrap_or_else(|| name.clone()),
+            })
+        });
+
         CompletionItem {
             label: name,
             kind: Some(CompletionItemKind::Variable),
@@ -385,7 +439,7 @@ impl DocumentCache {
             insert_text,
             insert_text_format,
             insert_text_mode: None,
-            text_edit: None,
+            text_edit,
             additional_text_edits: None,
             command: None,
             data: None,
