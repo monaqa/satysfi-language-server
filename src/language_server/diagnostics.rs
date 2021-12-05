@@ -38,7 +38,7 @@ pub fn get_diagnostics(doc_data: &DocumentData) -> Vec<Diagnostic> {
                     };
                     Diagnostic {
                         range,
-                        severity: Some(DiagnosticSeverity::Error),
+                        severity: Some(DiagnosticSeverity::ERROR),
                         code: None,
                         code_description: None,
                         source: Some("Syntax Error".to_owned()),
@@ -80,7 +80,7 @@ pub fn get_diagnostics(doc_data: &DocumentData) -> Vec<Diagnostic> {
 
             let diagnostics = Diagnostic {
                 range,
-                severity: Some(DiagnosticSeverity::Error),
+                severity: Some(DiagnosticSeverity::ERROR),
                 code: None,
                 code_description: None,
                 source: Some("Syntax Error".to_owned()),

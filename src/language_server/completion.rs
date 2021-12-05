@@ -57,7 +57,7 @@ impl From<CompletionResourceItem> for CompletionItem {
             detail: resource_item.detail,
             insert_text: resource_item.insert_text,
             insert_text_format: if resource_item.insert_text_format == Some("snippet".to_owned()) {
-                Some(InsertTextFormat::Snippet)
+                Some(InsertTextFormat::SNIPPET)
             } else {
                 None
             },
@@ -350,7 +350,7 @@ impl DocumentCache {
             } => (
                 self.get_text_from_span(url, *dec).map(|s| s.to_owned()),
                 Some(form_command_text_snippet(&name, type_args)),
-                Some(InsertTextFormat::Snippet),
+                Some(InsertTextFormat::SNIPPET),
             ),
             ComponentBody::BlockCmd {
                 type_declaration: Some(dec),
@@ -358,7 +358,7 @@ impl DocumentCache {
             } => (
                 self.get_text_from_span(url, *dec).map(|s| s.to_owned()),
                 Some(form_command_text_snippet(&name, type_args)),
-                Some(InsertTextFormat::Snippet),
+                Some(InsertTextFormat::SNIPPET),
             ),
             ComponentBody::MathCmd {
                 type_declaration: Some(dec),
@@ -372,7 +372,7 @@ impl DocumentCache {
         };
         CompletionItem {
             label: name,
-            kind: Some(CompletionItemKind::Variable),
+            kind: Some(CompletionItemKind::VARIABLE),
             detail,
             documentation: Some(Documentation::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
@@ -402,7 +402,7 @@ fn variable_completion_item(
 ) -> CompletionItem {
     CompletionItem {
         label: name,
-        kind: Some(CompletionItemKind::Function),
+        kind: Some(CompletionItemKind::FUNCTION),
         detail: type_declaration,
         documentation: Some(Documentation::MarkupContent(MarkupContent {
             kind: MarkupKind::Markdown,

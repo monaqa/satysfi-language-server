@@ -9,7 +9,7 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
     ServerCapabilities {
         // text document sync は一旦 full で行う
         // TODO: TextDocumentSyncKind::Incremental のほうがおそらくパフォーマンスが高い
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full)),
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         selection_range_provider: None,
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         completion_provider: Some(CompletionOptions {
