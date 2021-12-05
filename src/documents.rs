@@ -6,12 +6,14 @@ use std::{
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use log::info;
-use lspower::lsp::Url;
+use lspower::lsp::{Position, Url};
 use satysfi_parser::{
     grammar::{type_block_cmd, type_inline_cmd, type_math_cmd},
     structure::{Header, LetRecInner, Program, ProgramText, Signature, Statement, TypeInner},
     Cst, LineCol, Rule, Span,
 };
+
+use crate::util::{ConvertPosition, UrlPos};
 
 /// オンメモリで取り扱うデータをまとめたデータ構造。
 #[derive(Debug, Default)]
@@ -40,6 +42,27 @@ impl DocumentCache {
             Some(program_text.get_text_from_span(span))
         } else {
             None
+        }
+    }
+
+    /// カーソルを含む行内容を抽出する。
+    pub fn get_line<'a>(&'a self, urlpos: &UrlPos) -> Option<&'a str> {
+        let UrlPos { url, pos } = &urlpos;
+        match self.0.get(url)? {
+            DocumentData::Parsed { program_text, .. } => {
+                let pos_usize = program_text.from_position(&pos)?;
+                let LineCol { line, .. } = program_text.get_line_col(pos_usize)?;
+                let start = *program_text.lines.get(line)?;
+                let end = *program_text
+                    .lines
+                    .get(line + 1)
+                    .unwrap_or(&program_text.text.len());
+                Some(&program_text.text.as_str()[start..end])
+            }
+            DocumentData::NotParsed { text, .. } => {
+                let line = pos.line as usize;
+                text.split('\n').nth(line)
+            }
         }
     }
 
@@ -746,7 +769,6 @@ impl Component {
                         type_args: vec![],
                     }
                 };
-                info!("{}: {:?}", name, body);
                 vec![Component {
                     name,
                     body,
