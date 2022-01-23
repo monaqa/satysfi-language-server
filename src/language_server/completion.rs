@@ -82,8 +82,6 @@ impl DocumentCache {
     ) -> Option<CompletionResponse> {
         let line_str = self.get_line(curpos);
 
-        // dbg!(self.get_mode(curpos));
-
         match self.get_mode(curpos) {
             Mode::Program => Some(CompletionResponse::Array(
                 self.get_completion_list_program(curpos, trigger)?,
@@ -259,7 +257,6 @@ impl DocumentCache {
             let caps = mod_name.captures(line_until_cursor)?;
             caps.get(1).unwrap().as_str()
         };
-        dbg!(&module_name);
 
         let module = environment
             .modules()
@@ -283,8 +280,6 @@ impl DocumentCache {
                     .flatten(),
             )
             .find(|module| module.name == module_name)?;
-
-        dbg!(&module);
 
         if let ComponentBody::Module { components } = &module.body {
             let items = components
@@ -526,7 +521,7 @@ impl DocumentCache {
             let end = *pos;
             Range { start, end }
         };
-        dbg!(&curpos, &text, &range);
+
         if text.trim() == "@" {
             return Some(vec![
                 CompletionItem {
@@ -658,7 +653,7 @@ impl DocumentCache {
                     continue;
                 }
             }
-            dbg!(&pkg_names);
+
             return Some(
                 pkg_names
                     .into_iter()
