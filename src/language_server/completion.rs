@@ -180,8 +180,13 @@ impl DocumentCache {
                     ..
                 }) = dep.url.as_ref().and_then(|url| self.get(url))
                 {
+                    let modules = [
+                        doc_data.get_open_modules(pos_usize),
+                        doc_data.get_localized_modules(pos_usize),
+                    ]
+                    .concat();
                     env_dep
-                        .variables_external(&doc_data.get_open_modules(pos_usize))
+                        .variables_external(&modules)
                         .iter()
                         .map(|var| {
                             variable_completion_item(

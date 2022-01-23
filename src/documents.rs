@@ -227,6 +227,29 @@ impl DocumentData {
             DocumentData::NotParsed { .. } => vec![],
         }
     }
+
+    /// その position において、 Module.( | ) のようになっている module 名の一覧を表示する。
+    pub fn get_localized_modules(&self, pos: usize) -> Vec<String> {
+        match self {
+            DocumentData::Parsed { program_text, .. } => program_text
+                .cst
+                .dig(pos)
+                .into_iter()
+                .filter(|cst| cst.rule == Rule::expr_with_mod)
+                .flat_map(|cst| {
+                    cst.inner.iter().find_map(|inner| {
+                        if inner.rule == Rule::module_name {
+                            Some(inner.span)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .map(|span| program_text.get_text_from_span(span).to_owned())
+                .collect_vec(),
+            DocumentData::NotParsed { .. } => vec![],
+        }
+    }
 }
 
 /// 変数やコマンドに関する情報。
