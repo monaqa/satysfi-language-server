@@ -21,3 +21,4 @@ toml = "0.5.8"
 satysfi-parser = "0.0.2"
 # satysfi-parser = { path = "../satysfi-parser" }
 peg = "0.7.0"
+glob = "0.3.0"

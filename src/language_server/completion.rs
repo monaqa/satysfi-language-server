@@ -1,16 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
+use glob::glob;
 use itertools::Itertools;
-use log::info;
+use log::{debug, info};
 use lspower::lsp::{
     CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation,
     InsertTextFormat, MarkupContent, MarkupKind, Position, Range, TextEdit, Url,
 };
-use satysfi_parser::Mode;
+use satysfi_parser::{LineCol, Mode};
 use serde::Deserialize;
 
 use crate::{
-    documents::{ComponentBody, DocumentCache, DocumentData, Visibility},
+    documents::{require_candidate_dirs, ComponentBody, DocumentCache, DocumentData, Visibility},
     util::{ConvertPosition, UrlPos},
 };
 
@@ -76,6 +77,8 @@ impl DocumentCache {
     pub fn get_completion_list(&self, curpos: &UrlPos) -> Option<CompletionResponse> {
         let line_str = self.get_line(curpos);
 
+        // dbg!(self.get_mode(curpos));
+
         match self.get_mode(curpos) {
             Mode::Program => Some(CompletionResponse::Array(
                 self.get_completion_list_program(curpos)?,
@@ -90,7 +93,9 @@ impl DocumentCache {
             Mode::Math => Some(CompletionResponse::Array(
                 self.get_completion_list_math(curpos, line_str)?,
             )),
-            Mode::Header => None,
+            Mode::Header => Some(CompletionResponse::Array(
+                self.get_completion_list_header(curpos)?,
+            )),
             Mode::Literal => None,
             Mode::Comment => None,
         }
@@ -113,6 +118,12 @@ impl DocumentCache {
         let doc_data = self.get(url)?;
         let (program_text, environment) = self.get_doc_info(url)?;
         let pos_usize = program_text.from_position(pos)?;
+        // {
+        //     let csts = program_text.cst.dig(pos_usize - 1);
+        //     if let Some(cst) = csts.get(0) {
+        //         info!("{:?}", cst.rule);
+        //     }
+        // }
 
         let local_variables = environment
             .variables()
@@ -365,6 +376,161 @@ impl DocumentCache {
         Some([local_commands, deps_commands].concat())
     }
 
+    fn get_completion_list_header(&self, curpos: &UrlPos) -> Option<Vec<CompletionItem>> {
+        let UrlPos { url, pos } = curpos;
+        let text = self.get_line(curpos)?;
+        let (program_text, _) = self.get_doc_info(url)?;
+        let pos_usize = program_text.from_position(pos)?;
+        let range = {
+            let LineCol { line, .. } = program_text.get_line_col(pos_usize)?;
+            let start = *program_text.lines.get(line)?;
+            let start = program_text.get_position(start)?;
+            let end = *pos;
+            Range { start, end }
+        };
+        dbg!(&curpos, &text, &range);
+        if text.trim() == "@" {
+            return Some(vec![
+                CompletionItem {
+                    label: "@require:".to_owned(),
+                    kind: None,
+                    detail: Some("Specify a installed satysfi package".to_owned()),
+                    documentation: None,
+                    deprecated: None,
+                    preselect: None,
+                    sort_text: None,
+                    filter_text: None,
+                    insert_text: None,
+                    insert_text_format: None,
+                    insert_text_mode: None,
+                    text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                        range,
+                        new_text: "@require:".to_owned(),
+                    })),
+                    additional_text_edits: None,
+                    command: None,
+                    commit_characters: None,
+                    data: None,
+                    tags: None,
+                },
+                CompletionItem {
+                    label: "@import:".to_owned(),
+                    kind: None,
+                    detail: Some("Specify a relative path of the current directory".to_owned()),
+                    documentation: None,
+                    deprecated: None,
+                    preselect: None,
+                    sort_text: None,
+                    filter_text: None,
+                    insert_text: None,
+                    insert_text_format: None,
+                    insert_text_mode: None,
+                    text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                        range,
+                        new_text: "@import:".to_owned(),
+                    })),
+                    additional_text_edits: None,
+                    command: None,
+                    commit_characters: None,
+                    data: None,
+                    tags: None,
+                },
+            ]);
+        }
+        if text.contains("@require:") {
+            let file_path = url.to_file_path().ok();
+            let parent_path = file_path.as_ref().map(|p| p.parent().unwrap().to_owned());
+            let home_path = std::env::var("HOME").map(PathBuf::from).ok();
+            let dirs = require_candidate_dirs(parent_path.as_deref(), home_path.as_deref());
+            let mut pkg_names = vec![];
+            for dir in dirs {
+                for entry in glob(&format!("{}/**/*.satyg", dir.to_string_lossy()))
+                    .ok()?
+                    .flatten()
+                {
+                    if let Ok(relative) = entry.strip_prefix(&dir) {
+                        let pkg_name = relative
+                            .to_string_lossy()
+                            .into_owned()
+                            .strip_suffix(".satyg")
+                            .unwrap()
+                            .to_owned();
+                        pkg_names.push(pkg_name);
+                    } else {
+                        continue;
+                    }
+                }
+                for entry in glob(&format!("{}/**/*.satyh", dir.to_string_lossy()))
+                    .ok()?
+                    .flatten()
+                {
+                    if let Ok(relative) = entry.strip_prefix(&dir) {
+                        let pkg_name = relative
+                            .to_string_lossy()
+                            .into_owned()
+                            .strip_suffix(".satyh")
+                            .unwrap()
+                            .to_owned();
+                        pkg_names.push(pkg_name);
+                    } else {
+                        continue;
+                    }
+                }
+            }
+            return Some(
+                pkg_names
+                    .into_iter()
+                    .map(|s| self.header_completion_item("require", &s, range))
+                    .collect(),
+            );
+        }
+        if text.contains("@import:") {
+            let file_path = url.to_file_path().ok();
+            let parent_path = file_path.as_ref().map(|p| p.parent().unwrap().to_owned())?;
+            let mut pkg_names = vec![];
+            for entry in glob(&format!("{}/**/*.satyg", parent_path.to_string_lossy()))
+                .ok()?
+                .flatten()
+            {
+                if let Ok(relative) = entry.strip_prefix(&parent_path) {
+                    let pkg_name = relative
+                        .to_string_lossy()
+                        .into_owned()
+                        .strip_suffix(".satyg")
+                        .unwrap()
+                        .to_owned();
+                    pkg_names.push(pkg_name);
+                } else {
+                    continue;
+                }
+            }
+            for entry in glob(&format!("{}/**/*.satyh", parent_path.to_string_lossy()))
+                .ok()?
+                .flatten()
+            {
+                if let Ok(relative) = entry.strip_prefix(&parent_path) {
+                    let pkg_name = relative
+                        .to_string_lossy()
+                        .into_owned()
+                        .strip_suffix(".satyh")
+                        .unwrap()
+                        .to_owned();
+                    pkg_names.push(pkg_name);
+                } else {
+                    continue;
+                }
+            }
+            dbg!(&pkg_names);
+            return Some(
+                pkg_names
+                    .into_iter()
+                    .map(|s| self.header_completion_item("import", &s, range))
+                    .collect(),
+            );
+        }
+        None
+    }
+
     /// 現在補完しようとしている command の範囲を示す。
     fn get_cmd_range(pos: &Position, text: &str, chr: u16) -> Option<Range> {
         let utf16chars = text.encode_utf16().enumerate().collect_vec();
@@ -379,6 +545,37 @@ impl DocumentCache {
                 },
                 end: *pos,
             })
+    }
+
+    fn header_completion_item(
+        &self,
+        import_type: &str,
+        path: &str,
+        range: Range,
+    ) -> CompletionItem {
+        let text_edit = Some(CompletionTextEdit::Edit(TextEdit {
+            range,
+            new_text: format!("@{import_type}: {path}"),
+        }));
+        CompletionItem {
+            label: path.to_owned(),
+            kind: Some(CompletionItemKind::MODULE),
+            detail: None,
+            documentation: None,
+            deprecated: None,
+            preselect: None,
+            sort_text: None,
+            filter_text: None,
+            insert_text: None,
+            insert_text_format: None,
+            insert_text_mode: None,
+            text_edit,
+            additional_text_edits: None,
+            command: None,
+            commit_characters: None,
+            data: None,
+            tags: None,
+        }
     }
 
     fn command_completion_item(

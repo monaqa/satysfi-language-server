@@ -72,6 +72,7 @@ impl ConvertPosition for ProgramText {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct UrlPos {
     pub url: Url,
     pub pos: Position,

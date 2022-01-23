@@ -10,7 +10,7 @@ use lspower::lsp::{Position, Url};
 use satysfi_parser::{
     grammar::{type_block_cmd, type_inline_cmd, type_math_cmd},
     structure::{Header, LetRecInner, Program, ProgramText, Signature, Statement, TypeInner},
-    Cst, LineCol, Rule, Span,
+    Cst, CstText, LineCol, Rule, Span,
 };
 
 use crate::util::{ConvertPosition, UrlPos};
@@ -186,7 +186,18 @@ impl DocumentData {
 
     pub fn show_envs_debug(&self) {
         match self {
-            DocumentData::Parsed { environment, .. } => environment.show_debug(),
+            DocumentData::Parsed {
+                environment,
+                program_text,
+            } => {
+                environment.show_debug();
+                let cst_text = CstText {
+                    text: program_text.text.clone(),
+                    lines: program_text.lines.clone(),
+                    cst: program_text.cst.clone(),
+                };
+                info!("{cst_text}");
+            }
             DocumentData::NotParsed { .. } => {}
         }
     }
@@ -584,6 +595,18 @@ fn require_candidate_paths(
                 path.join(format!("dist/packages/{}.satyg", pkgname)),
             ]
         })
+        .concat()
+}
+
+pub fn require_candidate_dirs(parent: Option<&Path>, home: Option<&Path>) -> Vec<PathBuf> {
+    let usr_local_share = Some(PathBuf::from("/usr/local/share/satysfi"));
+    let usr_share = Some(PathBuf::from("/usr/share/satysfi"));
+    let home = home.map(|p| p.join(".satysfi"));
+    let parent = parent.map(|p| p.join(".satysfi"));
+    [parent, home, usr_local_share, usr_share]
+        .iter()
+        .filter_map(|x| x.clone())
+        .map(|path| vec![path.join("local/packages"), path.join("dist/packages")])
         .concat()
 }
 

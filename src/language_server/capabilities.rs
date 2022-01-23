@@ -13,7 +13,12 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
         selection_range_provider: None,
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         completion_provider: Some(CompletionOptions {
-            trigger_characters: Some(vec!["\\".to_owned(), "+".to_owned(), "#".to_owned()]),
+            trigger_characters: Some(vec![
+                "\\".to_owned(),
+                "+".to_owned(),
+                "#".to_owned(),
+                "@".to_owned(),
+            ]),
             ..Default::default()
         }),
         signature_help_provider: None,
