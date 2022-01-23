@@ -639,6 +639,7 @@ dependencies = [
  "log",
  "lspower",
  "peg 0.7.0",
+ "regex",
  "satysfi-parser",
  "serde",
  "simplelog",

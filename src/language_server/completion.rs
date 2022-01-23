@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::{collections::HashMap, path::PathBuf};
 
 use glob::glob;
@@ -74,14 +75,18 @@ impl From<CompletionResourceItem> for CompletionItem {
 }
 
 impl DocumentCache {
-    pub fn get_completion_list(&self, curpos: &UrlPos) -> Option<CompletionResponse> {
+    pub fn get_completion_list(
+        &self,
+        curpos: &UrlPos,
+        trigger: Option<&str>,
+    ) -> Option<CompletionResponse> {
         let line_str = self.get_line(curpos);
 
         // dbg!(self.get_mode(curpos));
 
         match self.get_mode(curpos) {
             Mode::Program => Some(CompletionResponse::Array(
-                self.get_completion_list_program(curpos)?,
+                self.get_completion_list_program(curpos, trigger)?,
             )),
             Mode::ProgramType => None,
             Mode::Vertical => Some(CompletionResponse::Array(
@@ -113,7 +118,15 @@ impl DocumentCache {
         }
     }
 
-    fn get_completion_list_program(&self, curpos: &UrlPos) -> Option<Vec<CompletionItem>> {
+    fn get_completion_list_program(
+        &self,
+        curpos: &UrlPos,
+        trigger: Option<&str>,
+    ) -> Option<Vec<CompletionItem>> {
+        if trigger == Some(".") {
+            return self.get_completion_list_with_module(curpos);
+        }
+
         let UrlPos { url, pos } = curpos;
         let doc_data = self.get(url)?;
         let (program_text, environment) = self.get_doc_info(url)?;
@@ -142,6 +155,18 @@ impl DocumentCache {
                     } else {
                         None
                     },
+                )
+            })
+            .collect_vec();
+
+        let local_modules = environment
+            .modules()
+            .iter()
+            .filter(|module| module.scope.includes(pos_usize))
+            .map(|module| {
+                module_completion_item(
+                    module.name.clone(),
+                    "module defined in this file".to_owned(),
                 )
             })
             .collect_vec();
@@ -182,9 +207,122 @@ impl DocumentCache {
             })
             .concat();
 
+        let deps_modules = self
+            .get_dependencies_recursive(environment.dependencies())
+            .iter()
+            .map(|dep| {
+                if let Some(DocumentData::Parsed {
+                    environment: env_dep,
+                    ..
+                }) = dep.url.as_ref().and_then(|url| self.get(url))
+                {
+                    env_dep
+                        .modules()
+                        .iter()
+                        .map(|module| {
+                            module_completion_item(
+                                module.name.clone(),
+                                format!("module defined in package {}", dep.name),
+                            )
+                        })
+                        .collect_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .concat();
+
         let primitives = get_primitive_list();
 
-        Some([local_variables, deps_variables, primitives].concat())
+        Some(
+            [
+                local_variables,
+                deps_variables,
+                primitives,
+                local_modules,
+                deps_modules,
+            ]
+            .concat(),
+        )
+    }
+
+    fn get_completion_list_with_module(&self, curpos: &UrlPos) -> Option<Vec<CompletionItem>> {
+        let UrlPos { url, pos } = curpos;
+        let (program_text, environment) = self.get_doc_info(url)?;
+        let pos_usize = program_text.from_position(pos)?;
+        let LineCol { line, .. } = program_text.get_line_col(pos_usize)?;
+        let start = *program_text.lines.get(line)?;
+        let line_until_cursor = &program_text.text[start..pos_usize];
+
+        let module_name = {
+            let mod_name = Regex::new(r#"([A-Z][a-zA-Z0-9-]*)\.$"#).unwrap();
+            let caps = mod_name.captures(line_until_cursor)?;
+            caps.get(1).unwrap().as_str()
+        };
+        dbg!(&module_name);
+
+        let module = environment
+            .modules()
+            .into_iter()
+            .filter(|module| module.scope.includes(pos_usize))
+            .chain(
+                self.get_dependencies_recursive(environment.dependencies())
+                    .iter()
+                    .map(|dep| {
+                        if let Some(DocumentData::Parsed {
+                            environment: env_dep,
+                            ..
+                        }) = dep.url.as_ref().and_then(|url| self.get(url))
+                        {
+                            env_dep.modules()
+                        } else {
+                            vec![]
+                        }
+                        .into_iter()
+                    })
+                    .flatten(),
+            )
+            .find(|module| module.name == module_name)?;
+
+        dbg!(&module);
+
+        if let ComponentBody::Module { components } = &module.body {
+            let items = components
+                .iter()
+                .filter(|c| matches!(c.body, ComponentBody::Variable { .. }))
+                .filter(|c| {
+                    c.visibility == Visibility::Public || c.visibility == Visibility::Direct
+                })
+                .map(|c| CompletionItem {
+                    label: c.name.clone(),
+                    kind: Some(CompletionItemKind::VARIABLE),
+                    detail: if let ComponentBody::Variable {
+                        type_declaration: Some(span),
+                    } = &c.body
+                    {
+                        self.get_text_from_span(&c.url, *span).map(|s| s.to_owned())
+                    } else {
+                        None
+                    },
+                    documentation: None,
+                    deprecated: None,
+                    preselect: None,
+                    sort_text: None,
+                    filter_text: None,
+                    insert_text: None,
+                    insert_text_format: None,
+                    insert_text_mode: None,
+                    text_edit: None,
+                    additional_text_edits: None,
+                    command: None,
+                    commit_characters: None,
+                    data: None,
+                    tags: None,
+                })
+                .collect_vec();
+            return Some(items);
+        }
+        None
     }
 
     fn get_completion_list_horizontal(
@@ -480,7 +618,7 @@ impl DocumentCache {
             return Some(
                 pkg_names
                     .into_iter()
-                    .map(|s| self.header_completion_item("require", &s, range))
+                    .map(|s| header_completion_item("require", &s, range))
                     .collect(),
             );
         }
@@ -524,7 +662,7 @@ impl DocumentCache {
             return Some(
                 pkg_names
                     .into_iter()
-                    .map(|s| self.header_completion_item("import", &s, range))
+                    .map(|s| header_completion_item("import", &s, range))
                     .collect(),
             );
         }
@@ -545,37 +683,6 @@ impl DocumentCache {
                 },
                 end: *pos,
             })
-    }
-
-    fn header_completion_item(
-        &self,
-        import_type: &str,
-        path: &str,
-        range: Range,
-    ) -> CompletionItem {
-        let text_edit = Some(CompletionTextEdit::Edit(TextEdit {
-            range,
-            new_text: format!("@{import_type}: {path}"),
-        }));
-        CompletionItem {
-            label: path.to_owned(),
-            kind: Some(CompletionItemKind::MODULE),
-            detail: None,
-            documentation: None,
-            deprecated: None,
-            preselect: None,
-            sort_text: None,
-            filter_text: None,
-            insert_text: None,
-            insert_text_format: None,
-            insert_text_mode: None,
-            text_edit,
-            additional_text_edits: None,
-            command: None,
-            commit_characters: None,
-            data: None,
-            tags: None,
-        }
     }
 
     fn command_completion_item(
@@ -643,6 +750,57 @@ impl DocumentCache {
             tags: None,
             commit_characters: None,
         }
+    }
+}
+
+fn module_completion_item(name: String, desc: String) -> CompletionItem {
+    CompletionItem {
+        label: name,
+        kind: Some(CompletionItemKind::MODULE),
+        detail: None,
+        documentation: Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: desc,
+        })),
+        deprecated: None,
+        preselect: None,
+        sort_text: None,
+        filter_text: None,
+        insert_text: None,
+        insert_text_format: None,
+        insert_text_mode: None,
+        text_edit: None,
+        additional_text_edits: None,
+        command: None,
+        data: None,
+        tags: None,
+        commit_characters: None,
+    }
+}
+
+fn header_completion_item(import_type: &str, path: &str, range: Range) -> CompletionItem {
+    let text_edit = Some(CompletionTextEdit::Edit(TextEdit {
+        range,
+        new_text: format!("@{import_type}: {path}"),
+    }));
+    CompletionItem {
+        label: path.to_owned(),
+        kind: Some(CompletionItemKind::MODULE),
+        detail: None,
+        documentation: None,
+        deprecated: None,
+        preselect: None,
+        sort_text: None,
+        filter_text: None,
+        insert_text: None,
+        insert_text_format: None,
+        insert_text_mode: None,
+        text_edit,
+        additional_text_edits: None,
+        command: None,
+        commit_characters: None,
+        data: None,
+        tags: None,
     }
 }
 

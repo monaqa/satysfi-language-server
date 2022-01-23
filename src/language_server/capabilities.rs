@@ -18,6 +18,7 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
                 "+".to_owned(),
                 "#".to_owned(),
                 "@".to_owned(),
+                ".".to_owned(),
             ]),
             ..Default::default()
         }),

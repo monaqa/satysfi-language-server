@@ -121,9 +121,12 @@ impl Inner {
     ) -> LspResult<Option<CompletionResponse>> {
         let url = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
+        let trigger = params.context.and_then(|ctx| ctx.trigger_character);
         if self.documents.0.get(&url).is_some() {
             let curpos = UrlPos { url, pos };
-            Ok(self.documents.get_completion_list(&curpos))
+            Ok(self
+                .documents
+                .get_completion_list(&curpos, trigger.as_deref()))
         } else {
             Ok(None)
         }
