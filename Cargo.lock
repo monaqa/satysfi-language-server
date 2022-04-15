@@ -484,33 +484,12 @@ dependencies = [
 
 [[package]]
 name = "peg"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f76678828272f177ac33b7e2ac2e3e73cc6c1cd1e3e387928aa69562fa51367"
-dependencies = [
- "peg-macros 0.6.3",
- "peg-runtime 0.6.3",
-]
-
-[[package]]
-name = "peg"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07c0b841ea54f523f7aa556956fbd293bcbe06f2e67d2eb732b7278aaf1d166a"
 dependencies = [
- "peg-macros 0.7.0",
- "peg-runtime 0.7.0",
-]
-
-[[package]]
-name = "peg-macros"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "636d60acf97633e48d266d7415a9355d4389cea327a193f87df395d88cd2b14d"
-dependencies = [
- "peg-runtime 0.6.3",
- "proc-macro2",
- "quote",
+ "peg-macros",
+ "peg-runtime",
 ]
 
 [[package]]
@@ -519,16 +498,10 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5aa52829b8decbef693af90202711348ab001456803ba2a98eb4ec8fb70844c"
 dependencies = [
- "peg-runtime 0.7.0",
+ "peg-runtime",
  "proc-macro2",
  "quote",
 ]
-
-[[package]]
-name = "peg-runtime"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9555b1514d2d99d78150d3c799d4c357a3e2c2a8062cd108e93a06d9057629c5"
 
 [[package]]
 name = "peg-runtime"
@@ -638,7 +611,7 @@ dependencies = [
  "itertools",
  "log",
  "lspower",
- "peg 0.7.0",
+ "peg",
  "regex",
  "satysfi-parser",
  "serde",
@@ -651,15 +624,15 @@ dependencies = [
 
 [[package]]
 name = "satysfi-parser"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4004555c78d851615a816b8912038f1dd4dbb1b7a464b8f49f58beb028f206f1"
+checksum = "b39274032a5660839ff938cee9e28358c92a1206e315194490304d7d613109d7"
 dependencies = [
  "anyhow",
  "glob",
  "itertools",
  "log",
- "peg 0.6.3",
+ "peg",
  "structopt",
  "thiserror",
 ]
