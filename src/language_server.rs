@@ -145,11 +145,11 @@ impl Inner {
         let d_data = self.documents.0.get(&uri).unwrap();
         match d_data {
             DocumentData::Parsed { program_text, .. } => {
-                let result = satysfi_formatter::format_lsp(&program_text.text, params.options);
+                let result = satysfi_formatter::formatting(&program_text.text, params.options);
                 Some(result)
             }
             DocumentData::NotParsed { text, .. } => {
-                let result = satysfi_formatter::format_lsp(&text, params.options);
+                let result = satysfi_formatter::formatting(&text, params.options);
                 Some(result)
             }
         }

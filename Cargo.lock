@@ -713,7 +713,7 @@ checksum = "3c9613b5a66ab9ba26415184cfc41156594925a9cf3a2057e57f31ff145f6568"
 [[package]]
 name = "satysfi-formatter"
 version = "0.1.0"
-source = "git+https://github.com/usagrada/satysfi-formatter.git?branch=feature/lsp#da97b5787e0804d88ad47794d88aab74b10753ff"
+source = "git+https://github.com/usagrada/satysfi-formatter.git?branch=feature/lsp#5038db390d4a9957ad03c85845c1957f077986c0"
 dependencies = [
  "clap 3.2.2",
  "dirs",
