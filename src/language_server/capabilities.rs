@@ -1,6 +1,6 @@
 use lspower::lsp::{
     ClientCapabilities, CompletionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
-    TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncCapability, TextDocumentSyncKind, DocumentFormattingOptions, WorkDoneProgressOptions,
 };
 
 /// Client の capabilities に合わせて Server 側の capabilities を返す。
@@ -32,7 +32,7 @@ pub fn server_capabilities(_client_capabilities: &ClientCapabilities) -> ServerC
         workspace_symbol_provider: None,
         code_action_provider: None,
         code_lens_provider: None,
-        document_formatting_provider: None,
+        document_formatting_provider: Some(OneOf::Left(true)),
         document_range_formatting_provider: None,
         document_on_type_formatting_provider: None,
         rename_provider: None,
