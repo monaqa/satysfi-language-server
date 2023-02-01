@@ -3,8 +3,9 @@ use lspower::{
     jsonrpc::Result as LspResult,
     lsp::{
         CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, DidSaveTextDocumentParams, GotoDefinitionParams,
-        GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult, ServerInfo,
+        DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentFormattingParams,
+        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, InitializeParams,
+        InitializeResult, ServerInfo, TextEdit,
     },
 };
 use std::sync::Arc;
@@ -65,6 +66,13 @@ impl lspower::LanguageServer for LanguageServer {
         params: GotoDefinitionParams,
     ) -> LspResult<Option<GotoDefinitionResponse>> {
         self.0.lock().await.goto_definition(params).await
+    }
+
+    async fn formatting(
+        &self,
+        params: DocumentFormattingParams,
+    ) -> LspResult<Option<Vec<TextEdit>>> {
+        Ok(self.0.lock().await.formatting(params).await)
     }
 
     async fn shutdown(&self) -> LspResult<()> {
@@ -129,6 +137,21 @@ impl Inner {
                 .get_completion_list(&curpos, trigger.as_deref()))
         } else {
             Ok(None)
+        }
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Option<Vec<TextEdit>> {
+        let uri = params.text_document.uri;
+        let d_data = self.documents.0.get(&uri).unwrap();
+        match d_data {
+            DocumentData::Parsed { program_text, .. } => {
+                let result = satysfi_formatter::formatting(&program_text.text, params.options);
+                Some(result)
+            }
+            DocumentData::NotParsed { text, .. } => {
+                let result = satysfi_formatter::formatting(&text, params.options);
+                Some(result)
+            }
         }
     }
 

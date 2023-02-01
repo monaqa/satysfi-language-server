@@ -23,3 +23,4 @@ satysfi-parser = "0.0.3"
 peg = "0.7.0"
 glob = "0.3.0"
 regex = "1.5.4"
+satysfi-formatter = { git = "https://github.com/usagrada/satysfi-formatter.git", branch = "main" }
