@@ -16,7 +16,7 @@ This repository is work-in-progress yet.
 |`diagnostics`    |Syntax error (Recoverable)                                 |✅  |
 |`diagnostics`    |Syntax error (Unrecoverable)                               |✅  |
 |`diagnostics`    |Type error                                                 |    |
-|`format`         |Code formatting                                            |    |
+|`format`         |Code formatting                                            |✅  |
 |`gotoDeclaration`|Go to the type declaration of a command in a module        |    |
 |`gotoDeclaration`|Go to the type declaration of a public function in a module|    |
 |`gotoDefinition` |Go to the definiton of a command                           |✅  |
