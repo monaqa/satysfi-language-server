@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
 
     if opts.tcp {
         if std::env::var("RUST_LOG").is_err() {
-            std::env::set_var("RUST_LOG", "info")
+            unsafe { std::env::set_var("RUST_LOG", "info") }
         }
         env_logger::init();
 

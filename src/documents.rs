@@ -215,14 +215,19 @@ impl DocumentData {
                     .filter(|opmod| opmod.scope.includes(pos))
                     .map(|opmod| opmod.name.clone());
                 let csts = program_text.cst.dig(pos);
-                let binded_open_stmts = csts
-                    .iter()
-                    .filter(|&cst| {
-                        cst.rule == Rule::bind_stmt
-                            && cst.inner.get(0).unwrap().rule == Rule::open_stmt
-                    })
-                    .map(|cst| program_text.get_text(cst).to_owned());
-                binded_open_stmts.chain(open_stmts).collect()
+                let bound_open_stmts = csts.iter().filter_map(|&cst| {
+                    if cst.rule == Rule::bind_stmt
+                        && let open_stmt = cst.inner.first()?
+                        && open_stmt.rule == Rule::open_stmt
+                        && let module_name = open_stmt.inner.first()?
+                        && module_name.rule == Rule::module_name
+                    {
+                        Some(program_text.get_text(module_name).to_owned())
+                    } else {
+                        None
+                    }
+                });
+                bound_open_stmts.chain(open_stmts).collect()
             }
             DocumentData::NotParsed { .. } => vec![],
         }

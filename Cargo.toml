@@ -2,7 +2,7 @@
 name = "satysfi-language-server"
 version = "0.0.1"
 authors = ["monaqa <mogassy@yahoo.co.jp>"]
-edition = "2018"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
