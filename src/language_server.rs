@@ -5,7 +5,7 @@ use lspower::{
         CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentFormattingParams,
         GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, InitializeParams,
-        InitializeResult, ServerInfo, TextEdit,
+        InitializeResult, Position, Range, ServerInfo, TextEdit,
     },
 };
 use std::sync::Arc;
@@ -141,18 +141,53 @@ impl Inner {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Option<Vec<TextEdit>> {
+        use std::process::Stdio;
+        use tokio::{io::AsyncWriteExt, process::Command};
+
         let uri = params.text_document.uri;
-        let d_data = self.documents.0.get(&uri).unwrap();
-        match d_data {
-            DocumentData::Parsed { program_text, .. } => {
-                let result = satysfi_formatter::formatting(&program_text.text, params.options);
-                Some(result)
-            }
-            DocumentData::NotParsed { text, .. } => {
-                let result = satysfi_formatter::formatting(&text, params.options);
-                Some(result)
-            }
+        let d_data = self.documents.0.get(&uri)?;
+        let text = match &*d_data {
+            DocumentData::Parsed { program_text, .. } => program_text.text.clone(),
+            DocumentData::NotParsed { text, .. } => text.clone(),
+        };
+
+        // satysfi-fmt を別プロセスとして呼ぶ。設定は文書のパスから探される
+        // コマンドは環境変数 SATYSFI_FORMATTER で差し替えられる
+        let fmt = std::env::var("SATYSFI_FORMATTER").unwrap_or_else(|_| "satysfi-fmt".to_string());
+        let mut command = Command::new(fmt);
+        if let Ok(path) = uri.to_file_path() {
+            command.arg("--assume-filename").arg(path);
         }
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|err| error!("failed to spawn satysfi-fmt: {}", err))
+            .ok()?;
+        let mut stdin = child.stdin.take()?;
+        let input = text.clone();
+        tokio::spawn(async move { stdin.write_all(input.as_bytes()).await });
+        let output = child.wait_with_output().await.ok()?;
+        if !output.status.success() {
+            error!(
+                "satysfi-fmt failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            return None;
+        }
+        let formatted = String::from_utf8(output.stdout).ok()?;
+
+        let line = text.matches('\n').count() as u32;
+        let character = text.rsplit('\n').next()?.encode_utf16().count() as u32;
+        Some(vec![TextEdit {
+            range: Range {
+                start: Position { line: 0, character: 0 },
+                end: Position { line, character },
+            },
+            new_text: formatted,
+        }])
     }
 
     async fn did_change(&mut self, params: DidChangeTextDocumentParams) {
